@@ -1,7 +1,7 @@
 streamlit
 opencv-python-headless
 numpy
-pywt
+PyWavelets
 qrcode
 Pillow
 cryptography
