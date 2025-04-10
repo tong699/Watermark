@@ -49,10 +49,7 @@ if dcm_file and text_input.strip():
 
         # Run embedding
         watermarked, Uw, Vw, S_LL, S_HL, alpha, pub = embed_watermark_dual(
-            cover_path=dicom_path,
-            wm_path="temp_watermark.png",
-            alpha=0.02,
-            k=50
+        img_rgb, "temp_watermark.png", alpha=0.02, k=50
         )
         cv2.imwrite("watermarked_output.png", watermarked)
         st.image(watermarked, caption="✅ Watermarked Image", use_column_width=True)
