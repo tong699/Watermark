@@ -5,7 +5,7 @@ import pydicom
 import tempfile
 from skimage.metrics import peak_signal_noise_ratio as psnr, structural_similarity as ssim
 
-from your_module import (
+from module import (
     preprocess, extract_dicom_metadata, generate_watermark_image,
     embed_watermark_dual, extract_watermark_dual,
     apply_jpeg, apply_noise, apply_crop,
