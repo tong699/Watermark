@@ -1,99 +1,94 @@
 import streamlit as st
-import cv2
 import numpy as np
+import cv2
 import pydicom
 import tempfile
-from skimage.metrics import peak_signal_noise_ratio as psnr, structural_similarity as ssim
-
-from module import (
-    preprocess, extract_dicom_metadata, generate_watermark_image,
-    embed_watermark_dual, extract_watermark_dual,
+from your_module import (
+    preprocess,
+    generate_watermark_image,
+    embed_watermark_dual,
+    extract_watermark_dual,
+    psnr, ssim,
     apply_jpeg, apply_noise, apply_crop,
     apply_rotate, apply_scale, apply_shift,
-    evaluate_dual
+    evaluate_dual,
 )
 
-st.set_page_config(layout="wide")
-st.title("Medical Image Watermarking System (DICOM-based)")
+# === App Setup ===
+st.set_page_config("Medical Watermarking", layout="wide")
+st.title("🩺 Medical Image Watermarking with RSA Authentication")
 
-uploaded_file = st.file_uploader("Upload DICOM file", type=["dcm"])
+# === Upload Section ===
+dcm_file = st.file_uploader("Upload a DICOM (.dcm) file", type=["dcm"])
+text_input = st.text_area("Enter Watermark Text", placeholder="e.g. Patient Name, ID, Hospital Info")
 
-if uploaded_file:
-    # Read DICOM
-    ds = pydicom.dcmread(uploaded_file)
-    dicom_img = ds.pixel_array.astype(np.float32)
-    img_norm = cv2.normalize(dicom_img, None, 0, 255, cv2.NORM_MINMAX)
-    if len(img_norm.shape) == 2:
-        img_color = cv2.cvtColor(img_norm.astype(np.uint8), cv2.COLOR_GRAY2BGR)
-    else:
-        img_color = img_norm.astype(np.uint8)
+if dcm_file and text_input.strip():
+    # Load and save temporary DICOM
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".dcm") as tmp_dcm:
+        tmp_dcm.write(dcm_file.read())
+        dicom_path = tmp_dcm.name
 
-    st.image(img_color, caption="Original DICOM Image", use_container_width=True)
+    ds = pydicom.dcmread(dicom_path)
+    try:
+        img = ds.pixel_array
+        img = preprocess(img)
+        img_rgb = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+    except Exception as e:
+        st.error("❌ Failed to load DICOM image.")
+        st.stop()
 
-    if st.button("Generate & Embed Watermark"):
-        with st.spinner("Embedding watermark..."):
-            user_input = st.text_area("Enter Watermark Content (e.g. Patient Name, Hospital, Copyright):")
-            if user_input.strip():
-                wm_image = generate_watermark_image(user_input)
-                st.image(wm_image, caption="Generated Watermark Image", clamp=True)
-            else:
-                st.warning("Please enter watermark content above.")
-                st.stop()
+    st.image(img, caption="Preprocessed Medical Image", use_column_width=True)
 
+    # === Watermark Generation ===
+    wm_img = generate_watermark_image(text_input)
+    st.image(wm_img, caption="Generated Watermark Image", clamp=True, width=256)
 
-            cv2.imwrite("cover.png", img_color)
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as f:
-                cv2.imwrite(f.name, wm_image)
-                cover_path = "cover.png"
-                wm_path = f.name
+    if st.button("🔐 Embed Watermark"):
+        # Save watermark
+        cv2.imwrite("temp_watermark.png", wm_img)
 
-            wm_img, Uw, Vw, SH, S_HL, alpha, public_key, wm_ref = embed_watermark_dual(
-                cover_path, wm_path, alpha=0.02, k=50)
+        # Run embedding
+        watermarked, Uw, Vw, S_LL, S_HL, alpha, pub = embed_watermark_dual(
+            cover_path=dicom_path,
+            wm_path="temp_watermark.png",
+            alpha=0.02,
+            k=50
+        )
+        cv2.imwrite("watermarked_output.png", watermarked)
+        st.image(watermarked, caption="✅ Watermarked Image", use_column_width=True)
 
-            cv2.imwrite("watermarked_output.png", wm_img)
+        # === Quality Evaluation ===
+        psnr_val = psnr(img, cv2.cvtColor(watermarked, cv2.COLOR_BGR2GRAY))
+        ssim_val = ssim(img, cv2.cvtColor(watermarked, cv2.COLOR_BGR2GRAY))
+        st.markdown(f"**PSNR:** {psnr_val:.2f} dB")
+        st.markdown(f"**SSIM:** {ssim_val:.4f}")
 
-        st.success("Watermark embedded.")
-        st.image(wm_img, caption="Watermarked Image", use_container_width=True)
+        # === Extraction
+        extracted_wm, valid = extract_watermark_dual(
+            "watermarked_output.png", Uw, Vw, S_LL, S_HL, alpha, pub
+        )
+        st.image(extracted_wm, caption=f"Extracted Watermark (Auth: {'✅' if valid else '❌'})", clamp=True)
 
-        # Quality comparison
-        psnr_val = psnr(cv2.cvtColor(img_color, cv2.COLOR_BGR2GRAY),
-                        cv2.cvtColor(wm_img, cv2.COLOR_BGR2GRAY))
-        ssim_val = ssim(cv2.cvtColor(img_color, cv2.COLOR_BGR2GRAY),
-                        cv2.cvtColor(wm_img, cv2.COLOR_BGR2GRAY))
+        # === Robustness Tests
+        st.subheader("🔁 Optional: Attack Testing")
+        col1, col2 = st.columns(2)
+        with col1:
+            jpeg = apply_jpeg(watermarked)
+            ncc, ber, auth, wm = evaluate_dual(jpeg, Uw, Vw, S_LL, S_HL, alpha, pub, wm_img)
+            st.image(wm, caption=f"JPEG Attack | NCC: {ncc:.3f} | BER: {ber:.3f} | Auth: {'✓' if auth else '✗'}")
 
-        st.write(f"**PSNR:** {psnr_val:.2f} dB")
-        st.write(f"**SSIM:** {ssim_val:.4f}")
+            noise = apply_noise(watermarked)
+            ncc, ber, auth, wm = evaluate_dual(noise, Uw, Vw, S_LL, S_HL, alpha, pub, wm_img)
+            st.image(wm, caption=f"Noise Attack | NCC: {ncc:.3f} | BER: {ber:.3f} | Auth: {'✓' if auth else '✗'}")
 
-        # Extraction from clean image
-        if st.button("Extract from Clean Image"):
-            wm_extr, valid = extract_watermark_dual("watermarked_output.png", Uw, Vw, SH, S_HL, alpha, public_key)
-            st.image(wm_extr, caption="Extracted Watermark")
-            st.write("Authentication Valid:" if valid else "**FAILED**")
+        with col2:
+            crop = apply_crop(watermarked)
+            ncc, ber, auth, wm = evaluate_dual(crop, Uw, Vw, S_LL, S_HL, alpha, pub, wm_img)
+            st.image(wm, caption=f"Crop Attack | NCC: {ncc:.3f} | BER: {ber:.3f} | Auth: {'✓' if auth else '✗'}")
 
-        # Attack simulation
-        st.markdown("---")
-        st.header("Attack Simulation & Robustness Testing")
+            rotate = apply_rotate(watermarked)
+            ncc, ber, auth, wm = evaluate_dual(rotate, Uw, Vw, S_LL, S_HL, alpha, pub, wm_img)
+            st.image(wm, caption=f"Rotate Attack | NCC: {ncc:.3f} | BER: {ber:.3f} | Auth: {'✓' if auth else '✗'}")
 
-        attack_type = st.selectbox("Choose Attack", ["JPEG", "Noise", "Crop", "Rotate", "Scale", "Shift"])
-
-        if st.button("Run Attack and Evaluate"):
-            if attack_type == "JPEG":
-                attacked = apply_jpeg(wm_img, 40)
-            elif attack_type == "Noise":
-                attacked = apply_noise(wm_img, std=10)
-            elif attack_type == "Crop":
-                attacked = apply_crop(wm_img.copy(), p=0.2)
-            elif attack_type == "Rotate":
-                attacked = apply_rotate(wm_img.copy(), angle=10)
-            elif attack_type == "Scale":
-                attacked = apply_scale(wm_img.copy(), s=0.9)
-            elif attack_type == "Shift":
-                attacked = apply_shift(wm_img.copy(), dx=10, dy=10)
-
-            st.image(attacked, caption=f"Attacked Image ({attack_type})")
-            ncc, ber, valid, extracted = evaluate_dual(attacked, Uw, Vw, SH, S_HL, alpha, public_key, wm_ref)
-
-            st.image(extracted, caption="Extracted Watermark (Post-Attack)")
-            st.write(f"**NCC:** {ncc:.4f}")
-            st.write(f"**BER:** {ber:.4f}")
-            st.write("Authentication Valid:" if valid else "**Authentication Failed**")
+else:
+    st.info("📥 Please upload a DICOM file and enter watermark text to begin.")
