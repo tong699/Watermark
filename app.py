@@ -32,8 +32,14 @@ if uploaded_file:
 
     if st.button("Generate & Embed Watermark"):
         with st.spinner("Embedding watermark..."):
-            metadata = extract_dicom_metadata(ds)
-            wm_image = generate_watermark_image(metadata)
+            user_input = st.text_area("Enter Watermark Content (e.g. Patient Name, Hospital, Copyright):")
+            if user_input.strip():
+                wm_image = generate_watermark_image(user_input)
+                st.image(wm_image, caption="Generated Watermark Image", clamp=True)
+            else:
+                st.warning("Please enter watermark content above.")
+                st.stop()
+
 
             cv2.imwrite("cover.png", img_color)
             with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as f:
