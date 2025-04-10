@@ -28,7 +28,7 @@ if uploaded_file:
     else:
         img_color = img_norm.astype(np.uint8)
 
-    st.image(img_color, caption="Original DICOM Image", use_column_width=True)
+    st.image(img_color, caption="Original DICOM Image", use_container_width=True)
 
     if st.button("Generate & Embed Watermark"):
         with st.spinner("Embedding watermark..."):
@@ -53,7 +53,7 @@ if uploaded_file:
             cv2.imwrite("watermarked_output.png", wm_img)
 
         st.success("Watermark embedded.")
-        st.image(wm_img, caption="Watermarked Image", use_column_width=True)
+        st.image(wm_img, caption="Watermarked Image", use_container_width=True)
 
         # Quality comparison
         psnr_val = psnr(cv2.cvtColor(img_color, cv2.COLOR_BGR2GRAY),
