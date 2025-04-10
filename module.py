@@ -92,16 +92,30 @@ def pad_to_square(mat):
 def crop_to_original(mat, shape): return mat[:shape[0], :shape[1]]
 
 # ================== Embedding ==================
-def embed_watermark_dual(cover_path, wm_path, alpha=0.02, k=50):
-    cover = cv2.imread(cover_path)
+def embed_watermark_dual(cover_img_array, wm_path, alpha=0.01, k=50):
+    # Input cover image is now a NumPy array (e.g., DICOM preprocessed)
+    cover = cover_img_array.copy()
     wm = cv2.imread(wm_path, cv2.IMREAD_GRAYSCALE)
+
+    # Convert grayscale to 3-channel BGR if needed
+    if len(cover.shape) == 2:
+        cover = cv2.cvtColor(cover, cv2.COLOR_GRAY2BGR)
+    elif cover.shape[2] == 1:
+        cover = cv2.cvtColor(cover[:, :, 0], cv2.COLOR_GRAY2BGR)
+
     ycbcr = rgb_to_ycbcr(cover)
-    Y, Cb, Cr = cv2.split(ycbcr); Y = Y.astype(np.float32)
+    Y, Cb, Cr = cv2.split(ycbcr)
+    Y = Y.astype(np.float32)
+
+    # DWT
     LL, (HL, LH, HH) = pywt.dwt2(Y, 'haar')
+
+    # Resize and encrypt watermark
     wm = cv2.resize(wm, (min(*LL.shape), min(*LL.shape)))
     enc_wm = encrypt_watermark(wm)
     Uw, Sw, Vw = svd(enc_wm, full_matrices=False)
 
+    # Embed in LL band
     LL_pad, shape = pad_to_square(LL)
     H, P = hessenberg(LL_pad, calc_q=True)
     U, S, V = svd(H, full_matrices=False)
@@ -110,14 +124,17 @@ def embed_watermark_dual(cover_path, wm_path, alpha=0.02, k=50):
     H_ = U @ np.diag(S_new) @ V
     LL_ = crop_to_original(P @ H_ @ P.T, shape)
 
-    Y_temp = pywt.idwt2((LL_, (HL, LH, HH)), 'haar')
-    temp_img = cv2.cvtColor(cv2.merge((Y_temp.astype(np.uint8), Cb, Cr)), cv2.COLOR_YCrCb2BGR)
+    # Build intermediate image for signature
+    temp_Y = pywt.idwt2((LL_, (HL, LH, HH)), 'haar')
+    temp_bgr = cv2.cvtColor(cv2.merge((temp_Y.astype(np.uint8), Cb, Cr)), cv2.COLOR_YCrCb2BGR)
 
+    # RSA signature of the watermarked image
     priv_key, pub_key = generate_rsa_keys()
-    digest = hashlib.sha256(temp_img.tobytes()).digest()
-    sig = sign_hash(priv_key, digest)
-    sig_bits = np.unpackbits(np.frombuffer(sig, np.uint8))
+    digest = hashlib.sha256(temp_bgr.tobytes()).digest()
+    signature = sign_hash(priv_key, digest)
+    sig_bits = np.unpackbits(np.frombuffer(signature, dtype=np.uint8))
 
+    # Embed signature in HL band
     HL_pad, shape_hl = pad_to_square(HL)
     Hh, Ph = hessenberg(HL_pad, calc_q=True)
     Uh, Sh, Vh = svd(Hh, full_matrices=False)
@@ -125,9 +142,11 @@ def embed_watermark_dual(cover_path, wm_path, alpha=0.02, k=50):
     Sh[-ks:] = alpha * sig_bits[:ks] + (1 - alpha) * Sh[-ks:]
     HL_ = crop_to_original(Ph @ (Uh @ np.diag(Sh) @ Vh) @ Ph.T, shape_hl)
 
+    # Final watermarked image
     Y_final = pywt.idwt2((LL_, (HL_, LH, HH)), 'haar')
-    final = cv2.merge((Y_final.astype(np.uint8), Cb, Cr))
-    return cv2.cvtColor(final, cv2.COLOR_YCrCb2BGR), Uw, Vw, S, Sh, alpha, pub_key, wm
+    watermarked_final = cv2.cvtColor(cv2.merge((Y_final.astype(np.uint8), Cb, Cr)), cv2.COLOR_YCrCb2BGR)
+
+    return watermarked_final, Uw, Vw, S, Sh, alpha, pub_key
 
 # ================== Evaluation ==================
 def psnr(img1, img2):
