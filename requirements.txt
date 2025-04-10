@@ -7,3 +7,6 @@ Pillow
 cryptography
 pydicom
 scikit-image
+pylibjpeg
+pylibjpeg-libjpeg
+pylibjpeg-openjpeg
