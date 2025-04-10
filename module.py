@@ -6,6 +6,7 @@ from scipy.linalg import hessenberg, svd
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import hashes
 import pydicom
+from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 
 # ================== Image Preprocessing ==================
 def preprocess(img):
@@ -108,6 +109,22 @@ def embed_watermark_dual(cover_path, wm_path, alpha=0.02, k=50):
     Y_final = pywt.idwt2((LL_, (HL_, LH, HH)), 'haar')
     final = cv2.merge((Y_final.astype(np.uint8), Cb, Cr))
     return cv2.cvtColor(final, cv2.COLOR_YCrCb2BGR), Uw, Vw, S, Sh, alpha, pub_key, wm
+
+# ================== Evaluation ==================
+def psnr(img1, img2):
+    """
+    Compute PSNR between two grayscale images.
+    """
+    img1 = cv2.resize(img1, (img2.shape[1], img2.shape[0]))
+    return peak_signal_noise_ratio(img1, img2)
+
+def ssim(img1, img2):
+    """
+    Compute SSIM between two grayscale images.
+    """
+    img1 = cv2.resize(img1, (img2.shape[1], img2.shape[0]))
+    return structural_similarity(img1, img2)
+
 
 # ================== Extraction ==================
 def extract_watermark_dual(path, Uw, Vw, SH, S_HL, alpha, pub, k=50, x0=0.5, mu=4):
