@@ -34,7 +34,7 @@ if dcm_file and text_input.strip():
         img = preprocess(img)
         img_rgb = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
     except Exception as e:
-        st.error("❌ Failed to load DICOM image.")
+        st.error(f"❌ Failed to load DICOM image.\n\n**Error:** {e}")
         st.stop()
 
     st.image(img, caption="Preprocessed Medical Image", use_column_width=True)
