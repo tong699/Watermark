@@ -5,3 +5,5 @@ PyWavelets
 qrcode
 Pillow
 cryptography
+pydicom
+scikit-image
