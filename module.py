@@ -76,7 +76,11 @@ def verify_signature(public_key, signature, data):
         return False
 
 # ================== Helpers ==================
-def rgb_to_ycbcr(img): return cv2.cvtColor(img, cv2.COLOR_BGR2YCrCb)
+def rgb_to_ycbcr(img):
+    # Ensure image is 3-channel BGR before conversion
+    if len(img.shape) == 2 or img.shape[2] == 1:
+        img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+    return cv2.cvtColor(img, cv2.COLOR_BGR2YCrCb)
 def pad_to_square(mat): 
     h, w = mat.shape
     s = max(h, w)
