@@ -10,11 +10,24 @@ from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 
 # ================== Image Preprocessing ==================
 def preprocess(img):
-    img = cv2.medianBlur(img, 3)
-    clahe = cv2.createCLAHE(clipLimit=2.0)
-    img = clahe.apply(img)
-    img = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX)
-    return img
+    """
+    Normalize DICOM image, convert to uint8 grayscale, and apply CLAHE.
+    """
+    # If image has more than 2 dimensions (e.g., [num_slices, h, w]), pick one slice
+    if img.ndim > 2:
+        img = img[0]
+
+    # Normalize to 0–255 and convert to uint8
+    img = img.astype(np.float32)
+    img -= img.min()
+    img /= (img.max() + 1e-5)
+    img = (img * 255).astype(np.uint8)
+
+    # Apply CLAHE (adaptive contrast)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    enhanced = clahe.apply(img)
+
+    return enhanced
 
 # ================== Metadata Extraction ==================
 def extract_dicom_metadata(ds):
