@@ -45,7 +45,6 @@ if uploaded_file is not None:
     text_input = extract_dicom_metadata_text(ds)
     watermark_img = generate_text_watermark(text_input)
     encrypted_watermark = logistic_encrypt(watermark_img)
-    cv2.imwrite("encrypted_text_watermark.png", encrypted_watermark)
 
     U_wm, S_wm, Vt_wm = np.linalg.svd(encrypted_watermark.astype(np.float64), full_matrices=False)
     S_wm_matrix = np.diag(S_wm)
@@ -61,7 +60,6 @@ if uploaded_file is not None:
     LL_prime = P @ H_prime @ P.T
     Y_prime = reconstruct_y_channel(LL_prime, HL, LH, HH)
 
-    np.save("watermarked_image.npy", Y_prime)
 
     fig, axs = plt.subplots(1, 3, figsize=(15, 5))
 
@@ -88,7 +86,7 @@ if uploaded_file is not None:
     st.write(f"📊 SSIM: {ssim:.4f}")
     
     #Extraction
-    Y_wm = np.load("watermarked_image.npy")
+    Y_wm = Y_prime
     LL_WM, HL_WM, LH_WM, HH_WM = decompose_watermarked_image(Y_wm)
     st.write("LL_WM shape:", LL_WM.shape)
     H_WM = P.T @ LL_WM @ P
@@ -99,7 +97,6 @@ if uploaded_file is not None:
     
     # Convert to uint8 image
     watermark_extracted = corrected_watermark.astype(np.uint8)
-    cv2.imwrite("extracted_watermark.png", watermark_extracted)
     S_W_prime = extract_encrypted_watermark_singular(S_WM, S_H, alpha)
     # Assume S_W_prime is 256x256 from the host, but watermark was 64x64
     wm_size = U_wm.shape[0]  
@@ -108,15 +105,10 @@ if uploaded_file is not None:
     # Reconstruct the encrypted watermark image
     W_E_prime = reconstruct_encrypted_watermark(U_wm, S_W_prime_cropped, Vt_wm)
 
-    # Optional: Save it
-    cv2.imwrite("extracted_encrypted_watermark.png", W_E_prime)
 
     # W_E_prime: encrypted watermark image from Step 7
     # Use same x0 and r as in Step 1 of embedding
     decrypted_watermark = logistic_decrypt(W_E_prime, x0=0.5, r=4)
-
-    # Save or display
-    cv2.imwrite("final_decrypted_watermark.png", decrypted_watermark)
     
 
     ber = calculate_ber(watermark_img, decrypted_watermark)
@@ -133,12 +125,11 @@ if uploaded_file is not None:
         ("gaussian_noise", {"mean": 0, "std": 15}),
         ("jpeg_compression", {"quality": 90}),
         ("rotation", {"angle": 25}),
-        ("scaling", {"scale": 0.7}),
         ("cropping", {"percent": 0.1})
     ]
 
     # Group attacks into chunks of 3 for layout
-    num_columns = 3
+    num_columns = 4
     for i in range(0, len(attack_types), num_columns):
         cols = st.columns(num_columns)
     
