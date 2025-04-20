@@ -11,3 +11,4 @@ pylibjpeg
 pylibjpeg-libjpeg
 pylibjpeg-openjpeg
 matplotlib
+scipy
