@@ -45,7 +45,7 @@ if uploaded_file is not None:
     text_input = extract_dicom_metadata_text(ds)
     watermark_img = generate_text_watermark(text_input)
     encrypted_watermark = logistic_encrypt(watermark_img)
-    
+    cv2.imwrite("encrypted_text_watermark.png", encrypted_watermark)
 
     U_wm, S_wm, Vt_wm = np.linalg.svd(encrypted_watermark.astype(np.float64), full_matrices=False)
     S_wm_matrix = np.diag(S_wm)
@@ -60,6 +60,8 @@ if uploaded_file is not None:
     H_prime = reconstruct_matrix(U_H, S_H_blended, Vt_H)
     LL_prime = P @ H_prime @ P.T
     Y_prime = reconstruct_y_channel(LL_prime, HL, LH, HH)
+
+    np.save("watermarked_image.npy", Y_prime)
 
     fig, axs = plt.subplots(1, 3, figsize=(15, 5))
 
@@ -97,6 +99,7 @@ if uploaded_file is not None:
     
     # Convert to uint8 image
     watermark_extracted = corrected_watermark.astype(np.uint8)
+    cv2.imwrite("extracted_watermark.png", watermark_extracted)
     S_W_prime = extract_encrypted_watermark_singular(S_WM, S_H, alpha)
     # Assume S_W_prime is 256x256 from the host, but watermark was 64x64
     wm_size = U_wm.shape[0]  
@@ -105,10 +108,16 @@ if uploaded_file is not None:
     # Reconstruct the encrypted watermark image
     W_E_prime = reconstruct_encrypted_watermark(U_wm, S_W_prime_cropped, Vt_wm)
 
+    # Optional: Save it
+    cv2.imwrite("extracted_encrypted_watermark.png", W_E_prime)
 
     # W_E_prime: encrypted watermark image from Step 7
     # Use same x0 and r as in Step 1 of embedding
     decrypted_watermark = logistic_decrypt(W_E_prime, x0=0.5, r=4)
+
+    # Save or display
+    cv2.imwrite("final_decrypted_watermark.png", decrypted_watermark)
+    
 
     ber = calculate_ber(watermark_img, decrypted_watermark)
     ncc = calculate_ncc(watermark_img, decrypted_watermark)
@@ -128,49 +137,16 @@ if uploaded_file is not None:
         ("cropping", {"percent": 0.1})
     ]
 
-    st.sidebar.markdown("### ⚙️ Attack Parameters")
-
-    enable_attacks = st.sidebar.multiselect(
-        "Select attacks to apply:",
-        ["no_attack", "salt_pepper", "gaussian_noise", "jpeg_compression", "rotation", "scaling", "cropping"],
-        default=["no_attack"]
-    )
-    
-    attack_params = {
-        "salt_pepper": {
-            "amount": st.sidebar.slider("Salt & Pepper Amount", 0.0, 0.1, 0.01, step=0.005)
-        },
-        "gaussian_noise": {
-            "mean": st.sidebar.slider("Gaussian Mean", -10.0, 10.0, 0.0),
-            "std": st.sidebar.slider("Gaussian Std", 0.0, 50.0, 15.0)
-        },
-        "jpeg_compression": {
-            "quality": st.sidebar.slider("JPEG Quality", 10, 100, 90)
-        },
-        "rotation": {
-            "angle": st.sidebar.slider("Rotation Angle (deg)", -45, 45, 25)
-        },
-        "scaling": {
-            "scale": st.sidebar.slider("Scaling Factor", 0.1, 1.0, 0.7)
-        },
-        "cropping": {
-            "percent": st.sidebar.slider("Cropping Percent", 0.0, 0.5, 0.1)
-        }
-    }
-
-
     # Group attacks into chunks of 3 for layout
     num_columns = 3
-    for i in range(0, len(enable_attacks), num_columns):
+    for i in range(0, len(attack_types), num_columns):
         cols = st.columns(num_columns)
     
         for j in range(num_columns):
-            if i + j >= len(enable_attacks):
-                break
+            if i + j >= len(attack_types):
+                break  # Avoid index out of range
     
-            attack_name = enable_attacks[i + j]
-            params = attack_params.get(attack_name, {})
-    
+            attack_name, params = attack_types[i + j]
             attacked_image = apply_attack(Y_prime.copy(), attack_name, **params)
     
             # Extraction from attacked image
@@ -195,6 +171,7 @@ if uploaded_file is not None:
             ax[1].set_title(f"\nBER: {ber_att:.4f}\nNCC: {ncc_att:.4f}")
             ax[1].axis('off')
     
+            # Show in column
             with cols[j]:
                 st.markdown(f"**🧪 {attack_name}**")
                 st.pyplot(fig)
