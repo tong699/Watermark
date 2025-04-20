@@ -126,58 +126,84 @@ if uploaded_file is not None:
     st.write(f"📊 NCC:  {ncc:.4f}")
     
 
-st.markdown("## 🔍 Robustness Testing")
+    st.write("\n🔍 Robustness Testing Under Attacks")
+    attack_types = [
+        ("no_attack", {}),
+        ("salt_pepper", {"amount": 0.01}),
+        ("gaussian_noise", {"mean": 0, "std": 15}),
+        ("jpeg_compression", {"quality": 90}),
+        ("rotation", {"angle": 25}),
+        ("scaling", {"scale": 0.7}),
+        ("cropping", {"percent": 0.1})
+    ]
 
-attack_options = {
-    "no_attack": {},
-    "salt_pepper": {"amount": 0.01},
-    "gaussian_noise": {"mean": 0, "std": 15},
-    "jpeg_compression": {"quality": 90},
-    "rotation": {"angle": 25},
-    "scaling": {"scale": 0.7},
-    "cropping": {"percent": 0.1}
-}
+    st.sidebar.markdown("### ⚙️ Attack Parameters")
 
-selected_attack = st.selectbox("Choose an attack to apply:", list(attack_options.keys()))
+    enable_attacks = st.sidebar.multiselect(
+        "Select attacks to apply:",
+        ["no_attack", "salt_pepper", "gaussian_noise", "jpeg_compression", "rotation", "scaling", "cropping"],
+        default=["no_attack"]
+    )
+    
+    attack_params = {
+        "salt_pepper": {
+            "amount": st.sidebar.slider("Salt & Pepper Amount", 0.0, 0.1, 0.01, step=0.005)
+        },
+        "gaussian_noise": {
+            "mean": st.sidebar.slider("Gaussian Mean", -10.0, 10.0, 0.0),
+            "std": st.sidebar.slider("Gaussian Std", 0.0, 50.0, 15.0)
+        },
+        "jpeg_compression": {
+            "quality": st.sidebar.slider("JPEG Quality", 10, 100, 90)
+        },
+        "rotation": {
+            "angle": st.sidebar.slider("Rotation Angle (deg)", -45, 45, 25)
+        },
+        "scaling": {
+            "scale": st.sidebar.slider("Scaling Factor", 0.1, 1.0, 0.7)
+        },
+        "cropping": {
+            "percent": st.sidebar.slider("Cropping Percent", 0.0, 0.5, 0.1)
+        }
+    }
 
-# Show parameter controls based on attack
-params = {}
-if selected_attack == "salt_pepper":
-    params["amount"] = st.slider("Salt & Pepper Amount", 0.0, 0.2, 0.01, step=0.005)
-elif selected_attack == "gaussian_noise":
-    params["mean"] = st.slider("Gaussian Mean", 0, 50, 0)
-    params["std"] = st.slider("Gaussian Std Dev", 1, 50, 15)
-elif selected_attack == "jpeg_compression":
-    params["quality"] = st.slider("JPEG Quality", 10, 100, 90)
-elif selected_attack == "rotation":
-    params["angle"] = st.slider("Rotation Angle", -45, 45, 25)
-elif selected_attack == "scaling":
-    params["scale"] = st.slider("Scaling Factor", 0.1, 1.0, 0.7)
-elif selected_attack == "cropping":
-    params["percent"] = st.slider("Crop Percent", 0.05, 0.5, 0.1)
 
-if st.button("Apply Attack and Evaluate"):
-    attacked_image = apply_attack(Y_prime.copy(), selected_attack, **params)
-
-    # Extraction from attacked image
-    LL_att, HL_att, LH_att, HH_att = decompose_watermarked_image(attacked_image)
-    H_att = P.T @ LL_att @ P
-    U_att, S_att, Vt_att = apply_svd_extraction(H_att)
-    S_W_prime_att = extract_encrypted_watermark_singular(S_att, S_H, alpha)
-    S_W_prime_crop = S_W_prime_att[:wm_size, :wm_size]
-    W_E_att = reconstruct_encrypted_watermark(U_wm, S_W_prime_crop, Vt_wm)
-    decrypted_att = logistic_decrypt(W_E_att, x0=0.5, r=4)
-
-    ber_att = calculate_ber(watermark_img, decrypted_att)
-    ncc_att = calculate_ncc(watermark_img, decrypted_att)
-
-    fig, ax = plt.subplots(1, 2, figsize=(8, 4))
-    ax[0].imshow(attacked_image.astype(np.uint8), cmap='gray')
-    ax[0].set_title(f"Attacked Image: {selected_attack}")
-    ax[0].axis('off')
-
-    ax[1].imshow(decrypted_att, cmap='gray')
-    ax[1].set_title(f"Decrypted Watermark\nBER: {ber_att:.4f}\nNCC: {ncc_att:.4f}")
-    ax[1].axis('off')
-
-    st.pyplot(fig)
+    # Group attacks into chunks of 3 for layout
+    num_columns = 3
+    for i in range(0, len(enable_attacks), num_columns):
+        cols = st.columns(num_columns)
+    
+        for j in range(num_columns):
+            if i + j >= len(enable_attacks):
+                break
+    
+            attack_name = enable_attacks[i + j]
+            params = attack_params.get(attack_name, {})
+    
+            attacked_image = apply_attack(Y_prime.copy(), attack_name, **params)
+    
+            # Extraction from attacked image
+            LL_att, HL_att, LH_att, HH_att = decompose_watermarked_image(attacked_image)
+            H_att = P.T @ LL_att @ P
+            U_att, S_att, Vt_att = apply_svd_extraction(H_att)
+            S_W_prime_att = extract_encrypted_watermark_singular(S_att, S_H, alpha)
+            S_W_prime_crop = S_W_prime_att[:wm_size, :wm_size]
+            W_E_att = reconstruct_encrypted_watermark(U_wm, S_W_prime_crop, Vt_wm)
+            decrypted_att = logistic_decrypt(W_E_att, x0=0.5, r=4)
+    
+            # Quality metrics
+            ber_att = calculate_ber(watermark_img, decrypted_att)
+            ncc_att = calculate_ncc(watermark_img, decrypted_att)
+    
+            # Plot for this attack
+            fig, ax = plt.subplots(1, 2, figsize=(6, 3))
+            ax[0].imshow(attacked_image.astype(np.uint8), cmap='gray')
+            ax[0].set_title("Attacked")
+            ax[0].axis('off')
+            ax[1].imshow(decrypted_att, cmap='gray')
+            ax[1].set_title(f"\nBER: {ber_att:.4f}\nNCC: {ncc_att:.4f}")
+            ax[1].axis('off')
+    
+            with cols[j]:
+                st.markdown(f"**🧪 {attack_name}**")
+                st.pyplot(fig)
