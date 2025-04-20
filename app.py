@@ -1,91 +1,97 @@
 import streamlit as st
+import pydicom
 import numpy as np
 import cv2
-import pydicom
-import tempfile
-from module import (
-    preprocess,
-    generate_watermark_image,
-    embed_watermark_dual,
-    extract_watermark_dual,
-    psnr, ssim,
-    apply_jpeg, apply_noise, apply_crop,
-    apply_rotate, apply_scale, apply_shift,
-    evaluate_dual,
+import os
+from PIL import Image
+import matplotlib.pyplot as plt
+
+# Import your watermarking methods
+from watermark_module import (
+    preprocess_medical_image,
+    extract_dicom_metadata_text,
+    generate_text_watermark,
+    logistic_encrypt,
+    apply_dwt, hessenberg, apply_svd,
+    blend_singular_values, reconstruct_matrix,
+    reconstruct_y_channel, evaluate_watermark_quality,
+    decompose_watermarked_image, apply_svd_extraction,
+    extract_encrypted_watermark_singular,
+    reconstruct_encrypted_watermark,
+    logistic_decrypt, calculate_ber, calculate_ncc,
+    apply_attack
 )
 
-# === App Setup ===
-st.set_page_config("Medical Watermarking", layout="wide")
-st.title("🩺 Medical Image Watermarking with RSA Authentication")
 
-# === Upload Section ===
-dcm_file = st.file_uploader("Upload a DICOM (.dcm) file", type=["dcm"])
-text_input = st.text_area("Enter Watermark Text", placeholder="e.g. Patient Name, ID, Hospital Info")
+st.set_page_config(layout="wide")
+st.title("🔐 Medical Image Watermarking with Robustness Testing")
 
-if dcm_file and text_input.strip():
-    # Load and save temporary DICOM
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".dcm") as tmp_dcm:
-        tmp_dcm.write(dcm_file.read())
-        dicom_path = tmp_dcm.name
+uploaded_file = st.file_uploader("Upload DICOM file (.dcm)", type=["dcm"])
 
-    ds = pydicom.dcmread(dicom_path)
-    try:
-        img = ds.pixel_array
-        img = preprocess(img)
-        img_rgb = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-    except Exception as e:
-        st.error(f"❌ Failed to load DICOM image.\n\n**Error:** {e}")
-        st.stop()
+if uploaded_file:
+    # Read DICOM
+    ds = pydicom.dcmread(uploaded_file)
+    cover_image = ds.pixel_array.astype(np.float64)
+    normalized = ((cover_image - cover_image.min()) / (cover_image.max() - cover_image.min()) * 255).astype(np.uint8)
 
-    st.image(img, caption="Preprocessed Medical Image", use_column_width=True)
+    # Step 1: Preprocess
+    Y = preprocess_medical_image(normalized)
 
-    # === Watermark Generation ===
-    wm_img = generate_watermark_image(text_input)
-    st.image(wm_img, caption="Generated Watermark Image", clamp=True, width=256)
+    # Step 2: Generate watermark
+    text_input = extract_dicom_metadata_text(ds)
+    watermark_img = generate_text_watermark(text_input)
+    encrypted_watermark = logistic_encrypt(watermark_img)
 
-    if st.button("🔐 Embed Watermark"):
-        # Save watermark
-        cv2.imwrite("temp_watermark.png", wm_img)
+    U_wm, S_wm, Vt_wm = np.linalg.svd(encrypted_watermark.astype(np.float64), full_matrices=False)
+    S_wm_matrix = np.diag(S_wm)
 
-        # Run embedding
-        watermarked, Uw, Vw, S_LL, S_HL, alpha, pub = embed_watermark_dual(
-        img_rgb, "temp_watermark.png", alpha=0.02, k=50
-        )
-        cv2.imwrite("watermarked_output.png", watermarked)
-        st.image(watermarked, caption="✅ Watermarked Image", use_column_width=True)
+    alpha = 0.18  # Or compute_adaptive_alpha(Y, lam=0.18)
+    LL, HL, LH, HH = apply_dwt(Y)
+    H, P = hessenberg(LL, calc_q=True)
+    U_H, S_H, Vt_H = apply_svd(H.astype(np.float64))
+    S_H = np.diag(S_H)
 
-        # === Quality Evaluation ===
-        psnr_val = psnr(img, cv2.cvtColor(watermarked, cv2.COLOR_BGR2GRAY))
-        ssim_val = ssim(img, cv2.cvtColor(watermarked, cv2.COLOR_BGR2GRAY))
-        st.markdown(f"**PSNR:** {psnr_val:.2f} dB")
-        st.markdown(f"**SSIM:** {ssim_val:.4f}")
+    S_H_blended = blend_singular_values(S_H, S_wm_matrix, alpha)
+    H_prime = reconstruct_matrix(U_H, S_H_blended, Vt_H)
+    LL_prime = P @ H_prime @ P.T
+    Y_prime = reconstruct_y_channel(LL_prime, HL, LH, HH).astype(np.uint8)
 
-        # === Extraction
-        extracted_wm, valid = extract_watermark_dual(
-            "watermarked_output.png", Uw, Vw, S_LL, S_HL, alpha, pub
-        )
-        st.image(extracted_wm, caption=f"Extracted Watermark (Auth: {'✅' if valid else '❌'})", clamp=True)
+    psnr, ssim = evaluate_watermark_quality(Y, Y_prime)
+    st.success(f"PSNR: {psnr:.2f} dB | SSIM: {ssim:.4f}")
 
-        # === Robustness Tests
-        st.subheader("🔁 Optional: Attack Testing")
-        col1, col2 = st.columns(2)
-        with col1:
-            jpeg = apply_jpeg(watermarked)
-            ncc, ber, auth, wm = evaluate_dual(jpeg, Uw, Vw, S_LL, S_HL, alpha, pub, wm_img)
-            st.image(wm, caption=f"JPEG Attack | NCC: {ncc:.3f} | BER: {ber:.3f} | Auth: {'✓' if auth else '✗'}")
+    # Show images
+    col1, col2 = st.columns(2)
+    col1.image(Y, caption="Original Image", use_column_width=True, clamp=True)
+    col2.image(Y_prime, caption="Watermarked Image", use_column_width=True, clamp=True)
 
-            noise = apply_noise(watermarked)
-            ncc, ber, auth, wm = evaluate_dual(noise, Uw, Vw, S_LL, S_HL, alpha, pub, wm_img)
-            st.image(wm, caption=f"Noise Attack | NCC: {ncc:.3f} | BER: {ber:.3f} | Auth: {'✓' if auth else '✗'}")
+    # Attacks section
+    st.header("💥 Robustness Evaluation (Attacks)")
+    attack_types = [
+        ("no_attack", {}),
+        ("salt_pepper", {"amount": 0.01}),
+        ("gaussian_noise", {"mean": 0, "std": 15}),
+        ("jpeg_compression", {"quality": 90}),
+        ("rotation", {"angle": 5}),
+        ("scaling", {"scale": 0.7}),
+        ("cropping", {"percent": 0.1}),
+    ]
 
-        with col2:
-            crop = apply_crop(watermarked)
-            ncc, ber, auth, wm = evaluate_dual(crop, Uw, Vw, S_LL, S_HL, alpha, pub, wm_img)
-            st.image(wm, caption=f"Crop Attack | NCC: {ncc:.3f} | BER: {ber:.3f} | Auth: {'✓' if auth else '✗'}")
+    for attack_name, params in attack_types:
+        st.subheader(f"🧪 Attack: {attack_name}")
+        attacked_image = apply_attack(Y_prime.copy(), attack_name, **params)
 
-            rotate = apply_rotate(watermarked)
-            ncc, ber, auth, wm = evaluate_dual(rotate, Uw, Vw, S_LL, S_HL, alpha, pub, wm_img)
-            st.image(wm, caption=f"Rotate Attack | NCC: {ncc:.3f} | BER: {ber:.3f} | Auth: {'✓' if auth else '✗'}")
+        # Extraction
+        LL_att, _, _, _ = decompose_watermarked_image(attacked_image)
+        H_att = P.T @ LL_att @ P
+        U_att, S_att, Vt_att = apply_svd_extraction(H_att)
+        S_W_prime_att = extract_encrypted_watermark_singular(S_att, S_H, alpha)
+        S_W_prime_crop = S_W_prime_att[:U_wm.shape[0], :U_wm.shape[0]]
 
-else:
-    st.info("📥 Please upload a DICOM file and enter watermark text to begin.")
+        W_E_att = reconstruct_encrypted_watermark(U_wm, S_W_prime_crop, Vt_wm)
+        decrypted_att = logistic_decrypt(W_E_att, x0=0.5, r=4)
+
+        ber = calculate_ber(watermark_img, decrypted_att)
+        ncc = calculate_ncc(watermark_img, decrypted_att)
+
+        st.write(f"🔐 BER: {ber:.4f} | NCC: {ncc:.4f}")
+        st.image(decrypted_att, caption="Decrypted Watermark", use_column_width=False, clamp=True)
