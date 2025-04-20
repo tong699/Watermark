@@ -64,13 +64,13 @@ if uploaded_file is not None:
     np.save("watermarked_image.npy", Y_prime)
     
     psnr, ssim = evaluate_watermark_quality(Y.astype(np.uint8), Y_prime)
-    print(f"📊 PSNR: {psnr:.2f} dB")
-    print(f"📊 SSIM: {ssim:.4f}")
+    st.write(f"📊 PSNR: {psnr:.2f} dB")
+    st.write(f"📊 SSIM: {ssim:.4f}")
     
     #Extraction
     Y_wm = np.load("watermarked_image.npy")
     LL_WM, HL_WM, LH_WM, HH_WM = decompose_watermarked_image(Y_wm)
-    print("LL_WM shape:", LL_WM.shape)
+    st.write("LL_WM shape:", LL_WM.shape)
     H_WM = P.T @ LL_WM @ P
     U_WM, S_WM, Vt_WM = apply_svd_extraction(H_WM)
     # Use U_WM, S_WM, Vt_WM from Step 4
@@ -101,11 +101,11 @@ if uploaded_file is not None:
     ber = calculate_ber(watermark_img, decrypted_watermark)
     ncc = calculate_ncc(watermark_img, decrypted_watermark)
 
-    print(f"📊 BER:  {ber:.4f}")
-    print(f"📊 NCC:  {ncc:.4f}")
+    st.write(f"📊 BER:  {ber:.4f}")
+    st.write(f"📊 NCC:  {ncc:.4f}")
     
 
-    print("\n🔍 Robustness Testing Under Attacks")
+    st.write("\n🔍 Robustness Testing Under Attacks")
     attack_types = [
         ("no_attack", {}),
         ("salt_pepper", {"amount": 0.01}),
@@ -117,7 +117,7 @@ if uploaded_file is not None:
     ]
 
     for attack_name, params in attack_types:
-        print(f"\n🧪 Attack: {attack_name} | Params: {params}")
+        st.write(f"\n🧪 Attack: {attack_name} | Params: {params}")
 
         attacked_image = apply_attack(Y_prime.copy(), attack_name, **params)
 
@@ -136,22 +136,17 @@ if uploaded_file is not None:
         ber_att = calculate_ber(watermark_img, decrypted_att)
         ncc_att = calculate_ncc(watermark_img, decrypted_att)
 
-        # Save result
-        cv2.imwrite(f"decrypted_{attack_name}.png", decrypted_att)
 
-        print(f"🔐 BER after {attack_name}:  {ber_att:.4f}")
-        print(f"🔐 NCC after {attack_name}:  {ncc_att:.4f}")
+        st.write(f"🔐 BER after {attack_name}:  {ber_att:.4f}")
+        st.write(f"🔐 NCC after {attack_name}:  {ncc_att:.4f}")
         
-        plt.figure(figsize=(10, 4))
-        plt.subplot(1, 2, 1)
-        plt.imshow(attacked_image.astype(np.uint8), cmap='gray')
-        plt.title(f"Attacked Image: {attack_name}")
-        plt.axis('off')
-
-        plt.subplot(1, 2, 2)
-        plt.imshow(decrypted_att, cmap='gray')
-        plt.title(f"Decrypted Watermark\nBER: {ber_att:.4f}, NCC: {ncc_att:.4f}")
-        plt.axis('off')
-
-        plt.tight_layout()
-        plt.show()
+        fig, ax = plt.subplots(1, 2, figsize=(10, 4))
+        ax[0].imshow(attacked_image.astype(np.uint8), cmap='gray')
+        ax[0].set_title(f"Attacked Image: {attack_name}")
+        ax[0].axis('off')
+        
+        ax[1].imshow(decrypted_att, cmap='gray')
+        ax[1].set_title(f"Decrypted Watermark\nBER: {ber_att:.4f}, NCC: {ncc_att:.4f}")
+        ax[1].axis('off')
+        
+        st.pyplot(fig)
