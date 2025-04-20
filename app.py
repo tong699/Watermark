@@ -82,11 +82,6 @@ if uploaded_file is not None:
     # Show in Streamlit
     st.markdown("### 🖼️ Image Overview")
     st.pyplot(fig)
-
-
-    ber = calculate_ber(watermark_img, decrypted_watermark)
-    ncc = calculate_ncc(watermark_img, decrypted_watermark)
-
     
     psnr, ssim = evaluate_watermark_quality(Y.astype(np.uint8), Y_prime)
     st.write(f"📊 PSNR: {psnr:.2f} dB")
