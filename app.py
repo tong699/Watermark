@@ -45,7 +45,7 @@ if uploaded_file is not None:
     text_input = extract_dicom_metadata_text(ds)
     watermark_img = generate_text_watermark(text_input)
     encrypted_watermark = logistic_encrypt(watermark_img)
-    cv2.imwrite("encrypted_text_watermark.png", encrypted_watermark)
+    
 
     U_wm, S_wm, Vt_wm = np.linalg.svd(encrypted_watermark.astype(np.float64), full_matrices=False)
     S_wm_matrix = np.diag(S_wm)
@@ -60,8 +60,6 @@ if uploaded_file is not None:
     H_prime = reconstruct_matrix(U_H, S_H_blended, Vt_H)
     LL_prime = P @ H_prime @ P.T
     Y_prime = reconstruct_y_channel(LL_prime, HL, LH, HH)
-
-    np.save("watermarked_image.npy", Y_prime)
 
     fig, axs = plt.subplots(1, 3, figsize=(15, 5))
 
@@ -99,7 +97,6 @@ if uploaded_file is not None:
     
     # Convert to uint8 image
     watermark_extracted = corrected_watermark.astype(np.uint8)
-    cv2.imwrite("extracted_watermark.png", watermark_extracted)
     S_W_prime = extract_encrypted_watermark_singular(S_WM, S_H, alpha)
     # Assume S_W_prime is 256x256 from the host, but watermark was 64x64
     wm_size = U_wm.shape[0]  
@@ -108,16 +105,10 @@ if uploaded_file is not None:
     # Reconstruct the encrypted watermark image
     W_E_prime = reconstruct_encrypted_watermark(U_wm, S_W_prime_cropped, Vt_wm)
 
-    # Optional: Save it
-    cv2.imwrite("extracted_encrypted_watermark.png", W_E_prime)
 
     # W_E_prime: encrypted watermark image from Step 7
     # Use same x0 and r as in Step 1 of embedding
     decrypted_watermark = logistic_decrypt(W_E_prime, x0=0.5, r=4)
-
-    # Save or display
-    cv2.imwrite("final_decrypted_watermark.png", decrypted_watermark)
-    
 
     ber = calculate_ber(watermark_img, decrypted_watermark)
     ncc = calculate_ncc(watermark_img, decrypted_watermark)
