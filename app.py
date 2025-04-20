@@ -116,34 +116,41 @@ if uploaded_file is not None:
         ("cropping", {"percent": 0.1})
     ]
 
-    for attack_name, params in attack_types:
-        st.write(f"\n🧪 Attack: {attack_name} | Params: {params}")
-
-        attacked_image = apply_attack(Y_prime.copy(), attack_name, **params)
-
-        # Extraction from attacked image
-        LL_att, HL_att, LH_att, HH_att = decompose_watermarked_image(attacked_image)
-        H_att = P.T @ LL_att @ P
-        U_att, S_att, Vt_att = apply_svd_extraction(H_att)
-
-        # Singular value extraction
-        S_W_prime_att = extract_encrypted_watermark_singular(S_att, S_H, alpha)
-        S_W_prime_crop = S_W_prime_att[:wm_size, :wm_size]
-        W_E_att = reconstruct_encrypted_watermark(U_wm, S_W_prime_crop, Vt_wm)
-        decrypted_att = logistic_decrypt(W_E_att, x0=0.5, r=4)
-
-        # Quality metrics
-        ber_att = calculate_ber(watermark_img, decrypted_att)
-        ncc_att = calculate_ncc(watermark_img, decrypted_att)
-
-
-        st.write(f"🔐 BER after {attack_name}:  {ber_att:.4f}")
-        st.write(f"🔐 NCC after {attack_name}:  {ncc_att:.4f}")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.image(attacked_image.astype(np.uint8), caption=f"🧪 {attack_name} Image", clamp=True, use_column_width=True)
-        
-        with col2:
-            st.image(decrypted_att, caption=f"🔐 Watermark\nBER: {ber_att:.4f}, NCC: {ncc_att:.4f}", clamp=True, use_column_width=True)
+    # Group attacks into chunks of 3 for layout
+    num_columns = 3
+    for i in range(0, len(attack_types), num_columns):
+        cols = st.columns(num_columns)
+    
+        for j in range(num_columns):
+            if i + j >= len(attack_types):
+                break  # Avoid index out of range
+    
+            attack_name, params = attack_types[i + j]
+            attacked_image = apply_attack(Y_prime.copy(), attack_name, **params)
+    
+            # Extraction from attacked image
+            LL_att, HL_att, LH_att, HH_att = decompose_watermarked_image(attacked_image)
+            H_att = P.T @ LL_att @ P
+            U_att, S_att, Vt_att = apply_svd_extraction(H_att)
+            S_W_prime_att = extract_encrypted_watermark_singular(S_att, S_H, alpha)
+            S_W_prime_crop = S_W_prime_att[:wm_size, :wm_size]
+            W_E_att = reconstruct_encrypted_watermark(U_wm, S_W_prime_crop, Vt_wm)
+            decrypted_att = logistic_decrypt(W_E_att, x0=0.5, r=4)
+    
+            # Quality metrics
+            ber_att = calculate_ber(watermark_img, decrypted_att)
+            ncc_att = calculate_ncc(watermark_img, decrypted_att)
+    
+            # Plot for this attack
+            fig, ax = plt.subplots(1, 2, figsize=(6, 3))
+            ax[0].imshow(attacked_image.astype(np.uint8), cmap='gray')
+            ax[0].set_title("Attacked")
+            ax[0].axis('off')
+            ax[1].imshow(decrypted_att, cmap='gray')
+            ax[1].set_title(f"Decrypted\nBER: {ber_att:.4f}\nNCC: {ncc_att:.4f}")
+            ax[1].axis('off')
+    
+            # Show in column
+            with cols[j]:
+                st.markdown(f"**🧪 {attack_name}**")
+                st.pyplot(fig)
