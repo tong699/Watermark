@@ -63,26 +63,26 @@ if uploaded_file is not None:
 
     np.save("watermarked_image.npy", Y_prime)
 
-    # Display: Original vs Watermarked vs Watermark
-    plt.figure(figsize=(15, 5))
+    fig, axs = plt.subplots(1, 3, figsize=(15, 5))
 
-    plt.subplot(1, 3, 1)
-    plt.imshow(Y, cmap='gray')
-    plt.title("Original DICOM Image")
-    plt.axis('off')
-
-    plt.subplot(1, 3, 2)
-    plt.imshow(encrypted_watermark, cmap='gray')
-    plt.title("Watermarked Image")
-    plt.axis('off')
-
-    plt.subplot(1, 3, 3)
-    plt.imshow(Y_prime, cmap='gray')
-    plt.title("Original Watermark")
-    plt.axis('off')
-
+    axs[0].imshow(original_img, cmap='gray')
+    axs[0].set_title("Original DICOM Image")
+    axs[0].axis('off')
+    
+    axs[1].imshow(watermarked_img, cmap='gray')
+    axs[1].set_title("Watermarked Image")
+    axs[1].axis('off')
+    
+    axs[2].imshow(extracted_watermark_img, cmap='gray')
+    axs[2].set_title("Original Watermark")
+    axs[2].axis('off')
+    
     plt.tight_layout()
-    plt.show()
+    
+    # Show in Streamlit
+    st.markdown("### 🖼️ Image Overview")
+    st.pyplot(fig)
+
 
     ber = calculate_ber(watermark_img, decrypted_watermark)
     ncc = calculate_ncc(watermark_img, decrypted_watermark)
