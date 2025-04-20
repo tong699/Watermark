@@ -65,16 +65,16 @@ if uploaded_file is not None:
 
     fig, axs = plt.subplots(1, 3, figsize=(15, 5))
 
-    axs[0].imshow(original_img, cmap='gray')
-    axs[0].set_title("Original DICOM Image")
+    axs[0].imshow(Y, cmap='gray')
+    axs[0].set_title("Before Watermark")
     axs[0].axis('off')
     
-    axs[1].imshow(watermarked_img, cmap='gray')
-    axs[1].set_title("Watermarked Image")
+    axs[1].imshow(encrypted_watermark, cmap='gray')
+    axs[1].set_title("Watermark Image")
     axs[1].axis('off')
     
-    axs[2].imshow(extracted_watermark_img, cmap='gray')
-    axs[2].set_title("Original Watermark")
+    axs[2].imshow(Y_prime, cmap='gray')
+    axs[2].set_title("After Watermark")
     axs[2].axis('off')
     
     plt.tight_layout()
