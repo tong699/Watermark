@@ -4,6 +4,7 @@ import numpy as np
 import cv2
 import os
 from PIL import Image
+from scipy.linalg import hessenberg
 import matplotlib.pyplot as plt
 
 # Import your watermarking methods
