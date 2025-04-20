@@ -62,6 +62,31 @@ if uploaded_file is not None:
     Y_prime = reconstruct_y_channel(LL_prime, HL, LH, HH)
 
     np.save("watermarked_image.npy", Y_prime)
+
+    # Display: Original vs Watermarked vs Watermark
+    plt.figure(figsize=(15, 5))
+
+    plt.subplot(1, 3, 1)
+    plt.imshow(Y, cmap='gray')
+    plt.title("Original DICOM Image")
+    plt.axis('off')
+
+    plt.subplot(1, 3, 2)
+    plt.imshow(encrypted_watermark, cmap='gray')
+    plt.title("Watermarked Image")
+    plt.axis('off')
+
+    plt.subplot(1, 3, 3)
+    plt.imshow(Y_prime, cmap='gray')
+    plt.title("Original Watermark")
+    plt.axis('off')
+
+    plt.tight_layout()
+    plt.show()
+
+    ber = calculate_ber(watermark_img, decrypted_watermark)
+    ncc = calculate_ncc(watermark_img, decrypted_watermark)
+
     
     psnr, ssim = evaluate_watermark_quality(Y.astype(np.uint8), Y_prime)
     st.write(f"📊 PSNR: {psnr:.2f} dB")
@@ -97,6 +122,7 @@ if uploaded_file is not None:
 
     # Save or display
     cv2.imwrite("final_decrypted_watermark.png", decrypted_watermark)
+    
 
     ber = calculate_ber(watermark_img, decrypted_watermark)
     ncc = calculate_ncc(watermark_img, decrypted_watermark)
@@ -111,7 +137,7 @@ if uploaded_file is not None:
         ("salt_pepper", {"amount": 0.01}),
         ("gaussian_noise", {"mean": 0, "std": 15}),
         ("jpeg_compression", {"quality": 90}),
-        ("rotation", {"angle": 5}),
+        ("rotation", {"angle": 25}),
         ("scaling", {"scale": 0.7}),
         ("cropping", {"percent": 0.1})
     ]
@@ -147,7 +173,7 @@ if uploaded_file is not None:
             ax[0].set_title("Attacked")
             ax[0].axis('off')
             ax[1].imshow(decrypted_att, cmap='gray')
-            ax[1].set_title(f"Decrypted\nBER: {ber_att:.4f}\nNCC: {ncc_att:.4f}")
+            ax[1].set_title(f"\nBER: {ber_att:.4f}\nNCC: {ncc_att:.4f}")
             ax[1].axis('off')
     
             # Show in column
