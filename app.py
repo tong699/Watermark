@@ -31,7 +31,7 @@ st.title("🔐 Medical Image Watermarking with Robustness Testing")
 
 uploaded_file = st.file_uploader("Upload DICOM file (.dcm)", type=["dcm"])
 
-if uploaded_file:
+if uploaded_file is not None:
     # Read DICOM
     ds = pydicom.dcmread(uploaded_file)
     cover_image = ds.pixel_array.astype(np.float64)
