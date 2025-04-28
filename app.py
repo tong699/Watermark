@@ -124,8 +124,8 @@ if uploaded_file is not None:
         ("salt_pepper", {"amount": 0.01}),
         ("gaussian_noise", {"mean": 0, "std": 15}),
         ("jpeg_compression", {"quality": 90}),
-        ("rotation", {"angle": 25}),
-        ("cropping", {"percent": 0.1})
+        ("rotation", {"angle": 15}),
+        ("cropping", {"percent": 0.15})
     ]
 
     # Group attacks into chunks of 3 for layout
