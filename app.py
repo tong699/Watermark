@@ -266,21 +266,21 @@ def perform_watermark_embedding(original_image_processed: np.ndarray,
                                 embedding_strength: float = 0.1,
                                 use_adaptive_alpha: bool = False,
                                 lambda_strength: float = 0.05) -> tuple:
-    print("--- Starting Watermark Embedding ---")
+    
     image_hash = compute_image_hash(original_image_processed)
-    print(f"Computed image hash (SHA-512): {image_hash[:16]}...")
+    
     original_text_watermark_img = generate_text_watermark(watermark_text, image_hash, size=(128, 128), font_size=10)
     cv2.imwrite("log_original_text_watermark.png", original_text_watermark_img)
-    print(f"Text watermark generated with hash. Shape: {original_text_watermark_img.shape}")
+    
 
     encrypted_watermark_img = logistic_encrypt(original_text_watermark_img, x0=0.5, r=4.0)
     cv2.imwrite("log_intermediate_encrypted_text_watermark.png", encrypted_watermark_img)
-    print("Generated and encrypted watermark.")
+    
 
     Y_host_preprocessed_float = original_image_processed.astype(np.float64)
     coeffs = pywt.dwt2(Y_host_preprocessed_float, 'haar')
     LL, (LH, HL, HH) = coeffs
-    print(f"Decomposed image into subbands. LL shape: {LL.shape}")
+    
 
     A = make_square_matrix(LL, fixed_size=256)
     W = encrypted_watermark_img.astype(np.float64)
@@ -288,21 +288,21 @@ def perform_watermark_embedding(original_image_processed: np.ndarray,
 
     if use_adaptive_alpha:
         alpha_used = compute_adaptive_alpha(original_image_processed, lambda_strength)
-        print(f"Adaptive alpha computed: {alpha_used:.4f}")
+        
     else:
         alpha_used = embedding_strength
-        print(f"Using fixed alpha: {alpha_used:.4f}")
+        
 
     Aw, Uw, Vwh, S = embed_watermark(A, W, alpha_used)
-    print("Watermark embedded into LL subband using SVD.")
+    
 
     LL_watermarked = crop_to_original(Aw, LL.shape)
     Y_watermarked_float = pywt.idwt2((LL_watermarked, (LH, HL, HH)), 'haar')
-    print("Watermarked image reconstructed with inverse IWT.")
+    
 
     np.save("watermarked_image_float.npy", Y_watermarked_float)
     cv2.imwrite("log_watermarked_image_visual.png", np.clip(Y_watermarked_float, 0, 255).astype(np.uint8))
-    print("--- Watermark Embedding Finished ---")
+    
     return (Y_watermarked_float, alpha_used, Uw, Vwh, S, encrypted_watermark_img, original_shape, original_text_watermark_img)
 
 def perform_watermark_extraction(Y_watermarked_attacked_float: np.ndarray,
@@ -312,26 +312,23 @@ def perform_watermark_extraction(Y_watermarked_attacked_float: np.ndarray,
                                  S: np.ndarray,
                                  original_watermark_shape: tuple,
                                  ll_shape: tuple) -> np.ndarray:
-    print("--- Starting Watermark Extraction ---")
+    
     Y_watermarked_attacked_float = cv2.resize(Y_watermarked_attacked_float, (512, 512), interpolation=cv2.INTER_AREA)
     coeffs_attacked = pywt.dwt2(Y_watermarked_attacked_float, 'haar')
     LL_attacked, _ = coeffs_attacked
-    print(f"Decomposed watermarked image. LL_attacked shape: {LL_attacked.shape}")
-
+    
     Aw = make_square_matrix(LL_attacked, fixed_size=256)
-    print(f"Watermarked LL converted to square matrix: {Aw.shape}")
+    
 
     W_encrypted_reconstructed = extract_watermark(Aw, Uw, Vwh, S, alpha_used, original_watermark_shape)
-    print("Encrypted watermark extracted.")
+    
 
     W_encrypted_reconstructed = np.clip(W_encrypted_reconstructed, 0, 255).astype(np.uint8)
     cv2.imwrite("log_intermediate_extracted_encrypted_watermark.png", W_encrypted_reconstructed)
-    print(f"Encrypted watermark shape: {W_encrypted_reconstructed.shape}")
+    
 
     final_decrypted_watermark = logistic_decrypt(W_encrypted_reconstructed, x0=0.5, r=4.0)
     cv2.imwrite("log_final_decrypted_watermark.png", final_decrypted_watermark)
-    print("Final watermark decrypted.")
-    print("--- Watermark Extraction Finished ---")
     return final_decrypted_watermark
 
 # Initialize Session State
