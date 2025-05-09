@@ -296,7 +296,7 @@ def perform_watermark_embedding(original_image_processed: np.ndarray,
     st.write("--- Watermark Embedding Finished ---")
     return (Y_watermarked_float, alpha_used, Uw, Vwh, S, encrypted_watermark_img, original_shape, original_text_watermark_img)
 
-dag perform_watermark_extraction(Y_watermarked_attacked_float: np.ndarray,
+def perform_watermark_extraction(Y_watermarked_attacked_float: np.ndarray,
                                  alpha_used: float,
                                  Uw: np.ndarray,
                                  Vwh: np.ndarray,
