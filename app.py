@@ -60,7 +60,6 @@ def generate_text_watermark(text: str, image_hash: str, size: tuple = (128, 128)
     wrapped_lines = []
     estimated_char_wrap_width = 20
     for line in full_text.split("\n"):
- midi
         if draw.textlength(line, font=font) <= max_width_px:
             wrapped_lines.append(line)
         else:
