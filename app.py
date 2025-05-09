@@ -14,6 +14,341 @@ import tempfile
 import io
 import base64
 
+# Placeholder for unchanged functions (assumed to be defined above)
+# preprocess_medical_image, compute_image_hash, extract_dicom_metadata_text,
+# generate_text_watermark, logistic_encrypt, logistic_decrypt,
+# compute_visual_entropy, compute_edge_entropy, compute_adaptive_alpha,
+# make_square_matrix, crop_to_original, embed_watermark, extract_watermark,
+# verify_authenticity, evaluate_watermark_quality, calculate_ber, calculate_ncc,
+# apply_attack, perform_watermark_embedding, perform_watermark_extraction
+
+# Initialize Session State
+if 'results' not in st.session_state:
+    st.session_state.results = []
+if 'uploaded_files' not in st.session_state:
+    st.session_state.uploaded_files = []
+if 'embedding_done' not in st.session_state:
+    st.session_state.embedding_done = False
+if 'extraction_done' not in st.session_state:
+    st.session_state.extraction_done = False
+if 'robustness_done' not in st.session_state:
+    st.session_state.robustness_done = False
+
+# --- Streamlit Dashboard ---
+st.title("DICOM Watermarking Dashboard")
+st.markdown("Upload DICOM files and use the buttons below to perform watermark embedding, extraction, and robustness analysis.")
+
+# Configuration Parameters
+st.sidebar.header("Configuration")
+embedding_strength = st.sidebar.slider("Embedding Strength", 0.01, 0.5, 0.1, step=0.01)
+use_adaptive_alpha = st.sidebar.checkbox("Use Adaptive Alpha", value=True)
+lambda_strength = st.sidebar.slider("Lambda Strength (for Adaptive Alpha)", 0.01, 0.1, 0.05, step=0.01)
+watermark_text_size = (128, 128)
+watermark_font_size = 10
+
+# File Upload
+uploaded_files = st.file_uploader("Upload DICOM Files", type=["dcm"], accept_multiple_files=True)
+if uploaded_files:
+    st.session_state.uploaded_files = uploaded_files
+    st.session_state.embedding_done = False
+    st.session_state.extraction_done = False
+    st.session_state.robustness_done = False
+    st.session_state.results = []
+    st.success(f"{len(uploaded_files)} DICOM file(s) uploaded successfully.")
+
+# Action Buttons
+st.header("Actions")
+col1, col2, col3 = st.columns(3)
+with col1:
+    embed_button = st.button("Embed Watermark")
+with col2:
+    extract_button = st.button("Extract Watermark", disabled=not st.session_state.embedding_done)
+with col3:
+    robustness_button = st.button("Perform Robustness Analysis", disabled=not st.session_state.embedding_done)
+
+# Embedding Action
+if embed_button and st.session_state.uploaded_files:
+    st.session_state.results = []
+    st.session_state.embedding_done = False
+    st.session_state.extraction_done = False
+    st.session_state.robustness_done = False
+    st.header("Embedding Results")
+    
+    for idx, uploaded_file in enumerate(st.session_state.uploaded_files):
+        st.subheader(f"Image {idx+1}: {uploaded_file.name}")
+        
+        # Save uploaded file temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".dcm") as tmp_file:
+            tmp_file.write(uploaded_file.read())
+            tmp_file_path = tmp_file.name
+
+        try:
+            dicom_dataset = pydicom.dcmread(tmp_file_path)
+        except Exception as e:
+            st.error(f"Error reading DICOM file {uploaded_file.name}: {e}")
+            # Create dummy DICOM dataset
+            dicom_dataset = pydicom.dataset.Dataset()
+            dicom_dataset.PatientID = f"TestPatient{idx+1}"
+            dicom_dataset.PatientAge = "060Y"
+            dicom_dataset.PatientSex = "O"
+            dicom_dataset.PatientBirthDate = "19600101"
+            dicom_dataset.InstitutionName = "Test Hospital"
+            dicom_dataset.Modality = "CT"
+            dicom_dataset.BodyPartExamined = "KNEE"
+            dicom_dataset.AcquisitionDate = "20230101"
+            dummy_pixel_array = np.random.randint(0, 2000, size=(512, 320), dtype=np.uint16)
+            dicom_dataset.PixelData = dummy_pixel_array.tobytes()
+            dicom_dataset.Rows = 512
+            dicom_dataset.Columns = 320
+            dicom_dataset.PhotometricInterpretation = "MONOCHROME2"
+            dicom_dataset.SamplesPerPixel = 1
+            dicom_dataset.BitsAllocated = 16
+            dicom_dataset.BitsStored = 12
+            dicom_dataset.HighBit = 11
+            dicom_dataset.PixelRepresentation = 0
+            dicom_dataset.RescaleSlope = 1
+            dicom_dataset.RescaleIntercept = 0
+
+        # Preprocess Image
+        host_pixel_array = dicom_dataset.pixel_array.astype(np.float64)
+        min_val, max_val = host_pixel_array.min(), host_pixel_array.max()
+        if max_val == min_val:
+            host_normalized_uint8 = np.zeros_like(host_pixel_array, dtype=np.uint8)
+        else:
+            host_normalized = (host_pixel_array - min_val) / (max_val - min_val) * 255.0
+            host_normalized_uint8 = host_normalized.astype(np.uint8)
+        Y_host_preprocessed = preprocess_medical_image(host_normalized_uint8)
+        cv2.imwrite(f"log_preprocessed_host_image_{idx+1}.png", Y_host_preprocessed)
+        st.write(f"Host image {idx+1} preprocessed. Shape: {Y_host_preprocessed.shape}")
+
+        # Generate and Embed Watermark
+        dicom_metadata_str = extract_dicom_metadata_text(dicom_dataset)
+        (Y_watermarked_float, alpha_final, Uw, Vwh, S, 
+         W_encrypted_embedded, ll_shape, original_text_watermark_img) = perform_watermark_embedding(
+            Y_host_preprocessed,
+            dicom_metadata_str,
+            embedding_strength=embedding_strength,
+            use_adaptive_alpha=use_adaptive_alpha,
+            lambda_strength=lambda_strength
+        )
+        
+        Y_watermarked_uint8 = np.clip(Y_watermarked_float, 0, 255).astype(np.uint8)
+        
+        # Evaluate Embedding Quality
+        psnr_val, ssim_val = evaluate_watermark_quality(Y_host_preprocessed, Y_watermarked_uint8)
+        st.write(f"📊 Watermark Embedding Quality for Image {idx+1}:")
+        st.write(f"  PSNR: {psnr_val:.2f} dB")
+        st.write(f"  SSIM: {ssim_val:.4f}")
+        st.write(f"  Alpha used: {alpha_final:.4f}")
+
+        # Store Results
+        st.session_state.results.append({
+            'idx': idx + 1,
+            'host_image': Y_host_preprocessed,
+            'encrypted_watermark': W_encrypted_embedded,
+            'watermarked_image': Y_watermarked_uint8,
+            'psnr': psnr_val,
+            'ssim': ssim_val,
+            'watermarked_float': Y_watermarked_float,
+            'alpha_final': alpha_final,
+            'Uw': Uw,
+            'Vwh': Vwh,
+            'S': S,
+            'll_shape': ll_shape,
+            'original_watermark': original_text_watermark_img
+        })
+
+        # Save Watermarked Float
+        np.save(f"watermarked_image_float_{idx+1}.npy", Y_watermarked_float)
+
+        # Display Images
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.image(Y_host_preprocessed, caption=f"Preprocessed Host Image {idx+1}", use_column_width=True)
+        with col2:
+            st.image(W_encrypted_embedded, caption=f"Encrypted Watermark {idx+1}", use_column_width=True)
+        with col3:
+            st.image(Y_watermarked_uint8, caption=f"Watermarked Image {idx+1}", use_column_width=True)
+
+    # Display Embedding Summary Plot
+    if st.session_state.results:
+        st.header("Embedding Summary")
+        plt.figure(figsize=(20, 12))
+        for i, result in enumerate(st.session_state.results):
+            plt.subplot(len(st.session_state.results), 4, i * 4 + 1)
+            plt.imshow(result['host_image'], cmap='gray')
+            plt.title(f"Image {result['idx']}\nPreprocessed Host")
+            plt.axis('off')
+
+            plt.subplot(len(st.session_state.results), 4, i * 4 + 2)
+            plt.imshow(result['encrypted_watermark'], cmap='gray')
+            plt.title(f"Image {result['idx']}\nEncrypted Watermark")
+            plt.axis('off')
+
+            plt.subplot(len(st.session_state.results), 4, i * 4 + 3)
+            plt.imshow(result['watermarked_image'], cmap='gray')
+            plt.title(f"Image {result['idx']}\nWatermarked\nPSNR={result['psnr']:.2f}, SSIM={result['ssim']:.3f}")
+            plt.axis('off')
+
+            plt.subplot(len(st.session_state.results), 4, i * 4 + 4)
+            plt.axis('off')
+
+        plt.tight_layout()
+        plt.suptitle("Watermark Embedding Results", fontsize=16)
+        plt.subplots_adjust(top=0.92)
+        st.pyplot(plt)
+        plt.close()
+        st.session_state.embedding_done = True
+        st.success("Watermark embedding completed successfully.")
+
+# Extraction Action
+if extract_button and st.session_state.embedding_done and st.session_state.results:
+    st.header("Watermark Extraction")
+    plt.figure(figsize=(20, len(st.session_state.results) * 3))
+    for i, result in enumerate(st.session_state.results):
+        Y_watermarked_loaded_float = np.load(f"watermarked_image_float_{result['idx']}.npy")
+        decrypted_watermark = perform_watermark_extraction(
+            Y_watermarked_loaded_float,
+            result['alpha_final'],
+            result['Uw'],
+            result['Vwh'],
+            result['S'],
+            watermark_text_size,
+            result['ll_shape']
+        )
+
+        is_authentic, extracted_hash = verify_authenticity(result['host_image'], decrypted_watermark)
+        st.write(f"🔒 Authenticity Verification for Image {result['idx']}:")
+        st.write(f"  Is Authentic: {is_authentic}")
+        st.write(f"  Extracted Hash (first 16 chars): {extracted_hash}")
+
+        ber = calculate_ber(result['original_watermark'], decrypted_watermark)
+        ncc = calculate_ncc(result['original_watermark'], decrypted_watermark)
+        st.write(f"🔍 Quality of Extracted Watermark (No Attack) for Image {result['idx']}:")
+        st.write(f"  BER: {ber:.6f}")
+        st.write(f"  NCC: {ncc:.6f}")
+
+        plt.subplot(len(st.session_state.results), 4, i * 4 + 1)
+        plt.imshow(result['host_image'], cmap='gray')
+        plt.title(f"Image {result['idx']}\nPreprocessed Host")
+        plt.axis('off')
+
+        plt.subplot(len(st.session_state.results), 4, i * 4 + 2)
+        plt.imshow(result['encrypted_watermark'], cmap='gray')
+        plt.title(f"Image {result['idx']}\nEncrypted Watermark")
+        plt.axis('off')
+
+        plt.subplot(len(st.session_state.results), 4, i * 4 + 3)
+        plt.imshow(result['watermarked_image'], cmap='gray')
+        plt.title(f"Image {result['idx']}\nWatermarked\nPSNR={result['psnr']:.2f}, SSIM={result['ssim']:.3f}")
+        plt.axis('off')
+
+        plt.subplot(len(st.session_state.results), 4, i * 4 + 4)
+        plt.imshow(decrypted_watermark, cmap='gray')
+        plt.title(f"Image {result['idx']}\nDecrypted (No Attack)\nBER={ber:.3f}, NCC={ncc:.3f}")
+        plt.axis('off')
+
+    plt.tight_layout()
+    plt.suptitle("Watermark Embedding and Extraction Results", fontsize=16)
+    plt.subplots_adjust(top=0.9)
+    st.pyplot(plt)
+    plt.close()
+    st.session_state.extraction_done = True
+    st.success("Watermark extraction completed successfully.")
+
+# Robustness Analysis Action
+if robustness_button and st.session_state.embedding_done and st.session_state.results:
+    st.header("Robustness Analysis for Image 1")
+    first_result = st.session_state.results[0]
+    attack_types_params = [
+        ("no_attack", {}),
+        ("salt_pepper", {"amount": 0.01}),
+        ("gaussian_noise", {"mean": 0, "std": 15}),
+        ("jpeg_compression", {"quality": 90}),
+        ("rotation", {"angle": 15}),
+        ("scaling", {"scale": 0.7}),
+        ("cropping", {"percent": 0.1})
+    ]
+    num_attacks = len(attack_types_params)
+    num_plot_columns = 4
+    num_plot_rows = (num_attacks + num_plot_columns - 1) // num_plot_columns * 2
+    fig_attacks, axs_attacks = plt.subplots(
+        num_plot_rows, num_plot_columns,
+        figsize=(4 * num_plot_columns, 3 * num_plot_rows / 2)
+    )
+    axs_attacks_flat = axs_attacks.flatten() if num_plot_rows > 1 or num_plot_columns > 1 else [axs_attacks]
+    plot_idx = 0
+
+    for attack_idx, (attack_name, params) in enumerate(attack_types_params):
+        st.write(f"Applying Attack: {attack_name} with params: {params}")
+        attacked_image_float = apply_attack(first_result['watermarked_float'].copy(), attack_name, **params)
+        cv2.imwrite(f"log_attacked_image_{attack_name}.png", np.clip(attacked_image_float, 0, 255).astype(np.uint8))
+        decrypted_watermark_attacked = perform_watermark_extraction(
+            attacked_image_float,
+            first_result['alpha_final'],
+            first_result['Uw'],
+            first_result['Vwh'],
+            first_result['S'],
+            watermark_text_size,
+            first_result['ll_shape']
+        )
+        cv2.imwrite(f"log_decrypted_watermark_after_{attack_name}.png", decrypted_watermark_attacked)
+        ber_attacked = calculate_ber(first_result['original_watermark'], decrypted_watermark_attacked)
+        ncc_attacked = calculate_ncc(first_result['original_watermark'], decrypted_watermark_attacked)
+        st.write(f"  Results for {attack_name}: BER = {ber_attacked:.6f}, NCC = {ncc_attacked:.6f}")
+        if plot_idx < len(axs_attacks_flat):
+            ax_image = axs_attacks_flat[plot_idx]
+            ax_image.imshow(np.clip(attacked_image_float, 0, 255).astype(np.uint8), cmap='gray')
+            ax_image.set_title(f"Attacked: {attack_name}", fontsize=9)
+            ax_image.axis('off')
+        plot_idx += 1
+        if plot_idx < len(axs_attacks_flat):
+            ax_watermark = axs_attacks_flat[plot_idx]
+            ax_watermark.imshow(decrypted_watermark_attacked, cmap='gray')
+            ax_watermark.set_title(f"Extracted WM\nBER={ber_attacked:.3f}, NCC={ncc_attacked:.3f}", fontsize=9)
+            ax_watermark.axis('off')
+        plot_idx += 1
+    while plot_idx < len(axs_attacks_flat):
+        axs_attacks_flat[plot_idx].axis('off')
+        plot_idx += 1
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    fig_attacks.suptitle("Robustness Analysis with Authentication (SHA-512) for Image 1", fontsize=16)
+    st.pyplot(fig_attacks)
+    plt.close()
+    st.session_state.robustness_done = True
+    st.success("Robustness analysis completed successfully.")
+
+# Clean up temporary files
+for idx in range(len(st.session_state.uploaded_files)):
+    tmp_file_path = f"watermarked_image_float_{idx+1}.npy"
+    if os.path.exists(tmp_file_path):
+        os.remove(tmp_file_path)
+    if os.path.exists(f"log_preprocessed_host_image_{idx+1}.png"):
+        os.remove(f"log_preprocessed_host_image_{idx+1}.png")
+if os.path.exists("watermarked_image_float.npy"):
+    os.remove("watermarked_image_float.npy")
+if os.path.exists("log_original_text_watermark.png"):
+    os.remove("log_original_text_watermark.png")
+if os.path.exists("log_intermediate_encrypted_text_watermark.png"):
+    os.remove("log_intermediate_encrypted_text_watermark.png")
+if os.path.exists("log_watermarked_image_visual.png"):
+    os.remove("log_watermarked_image_visual.png")
+if os.path.exists("log_inter  import streamlit as st
+import pydicom
+import numpy as np
+import cv2
+import matplotlib.pyplot as plt
+import os
+import hashlib
+import pywt
+from PIL import Image, ImageDraw, ImageFont
+from scipy.stats import entropy
+from skimage.metrics import peak_signal_noise_ratio, structural_similarity
+import textwrap
+import tempfile
+import io
+import base64
+
 # --- Original Functions (Unchanged) ---
 def preprocess_medical_image(image: np.ndarray) -> np.ndarray:
     image = cv2.resize(image, (512, 512), interpolation=cv2.INTER_AREA)
@@ -325,9 +660,21 @@ def perform_watermark_extraction(Y_watermarked_attacked_float: np.ndarray,
     st.write("--- Watermark Extraction Finished ---")
     return final_decrypted_watermark
 
+# Initialize Session State
+if 'results' not in st.session_state:
+    st.session_state.results = []
+if 'uploaded_files' not in st.session_state:
+    st.session_state.uploaded_files = []
+if 'embedding_done' not in st.session_state:
+    st.session_state.embedding_done = False
+if 'extraction_done' not in st.session_state:
+    st.session_state.extraction_done = False
+if 'robustness_done' not in st.session_state:
+    st.session_state.robustness_done = False
+
 # --- Streamlit Dashboard ---
 st.title("DICOM Watermarking Dashboard")
-st.markdown("Upload DICOM files to perform watermark embedding, extraction, and robustness analysis.")
+st.markdown("Upload DICOM files and use the buttons below to perform watermark embedding, extraction, and robustness analysis.")
 
 # Configuration Parameters
 st.sidebar.header("Configuration")
@@ -339,11 +686,33 @@ watermark_font_size = 10
 
 # File Upload
 uploaded_files = st.file_uploader("Upload DICOM Files", type=["dcm"], accept_multiple_files=True)
-results = []
-
 if uploaded_files:
-    st.header("Processing Results")
-    for idx, uploaded_file in enumerate(uploaded_files):
+    st.session_state.uploaded_files = uploaded_files
+    st.session_state.embedding_done = False
+    st.session_state.extraction_done = False
+    st.session_state.robustness_done = False
+    st.session_state.results = []
+    st.success(f"{len(uploaded_files)} DICOM file(s) uploaded successfully.")
+
+# Action Buttons
+st.header("Actions")
+col1, col2, col3 = st.columns(3)
+with col1:
+    embed_button = st.button("Embed Watermark")
+with col2:
+    extract_button = st.button("Extract Watermark", disabled=not st.session_state.embedding_done)
+with col3:
+    robustness_button = st.button("Perform Robustness Analysis", disabled=not st.session_state.embedding_done)
+
+# Embedding Action
+if embed_button and st.session_state.uploaded_files:
+    st.session_state.results = []
+    st.session_state.embedding_done = False
+    st.session_state.extraction_done = False
+    st.session_state.robustness_done = False
+    st.header("Embedding Results")
+    
+    for idx, uploaded_file in enumerate(st.session_state.uploaded_files):
         st.subheader(f"Image {idx+1}: {uploaded_file.name}")
         
         # Save uploaded file temporarily
@@ -390,7 +759,7 @@ if uploaded_files:
         cv2.imwrite(f"log_preprocessed_host_image_{idx+1}.png", Y_host_preprocessed)
         st.write(f"Host image {idx+1} preprocessed. Shape: {Y_host_preprocessed.shape}")
 
-        # Generate Watermark
+        # Generate and Embed Watermark
         dicom_metadata_str = extract_dicom_metadata_text(dicom_dataset)
         (Y_watermarked_float, alpha_final, Uw, Vwh, S, 
          W_encrypted_embedded, ll_shape, original_text_watermark_img) = perform_watermark_embedding(
@@ -411,7 +780,7 @@ if uploaded_files:
         st.write(f"  Alpha used: {alpha_final:.4f}")
 
         # Store Results
-        results.append({
+        st.session_state.results.append({
             'idx': idx + 1,
             'host_image': Y_host_preprocessed,
             'encrypted_watermark': W_encrypted_embedded,
@@ -440,26 +809,26 @@ if uploaded_files:
             st.image(Y_watermarked_uint8, caption=f"Watermarked Image {idx+1}", use_column_width=True)
 
     # Display Embedding Summary Plot
-    if results:
+    if st.session_state.results:
         st.header("Embedding Summary")
         plt.figure(figsize=(20, 12))
-        for i, result in enumerate(results):
-            plt.subplot(len(results), 4, i * 4 + 1)
+        for i, result in enumerate(st.session_state.results):
+            plt.subplot(len(st.session_state.results), 4, i * 4 + 1)
             plt.imshow(result['host_image'], cmap='gray')
             plt.title(f"Image {result['idx']}\nPreprocessed Host")
             plt.axis('off')
 
-            plt.subplot(len(results), 4, i * 4 + 2)
+            plt.subplot(len(st.session_state.results), 4, i * 4 + 2)
             plt.imshow(result['encrypted_watermark'], cmap='gray')
             plt.title(f"Image {result['idx']}\nEncrypted Watermark")
             plt.axis('off')
 
-            plt.subplot(len(results), 4, i * 4 + 3)
+            plt.subplot(len(st.session_state.results), 4, i * 4 + 3)
             plt.imshow(result['watermarked_image'], cmap='gray')
             plt.title(f"Image {result['idx']}\nWatermarked\nPSNR={result['psnr']:.2f}, SSIM={result['ssim']:.3f}")
             plt.axis('off')
 
-            plt.subplot(len(results), 4, i * 4 + 4)
+            plt.subplot(len(st.session_state.results), 4, i * 4 + 4)
             plt.axis('off')
 
         plt.tight_layout()
@@ -467,121 +836,128 @@ if uploaded_files:
         plt.subplots_adjust(top=0.92)
         st.pyplot(plt)
         plt.close()
+        st.session_state.embedding_done = True
+        st.success("Watermark embedding completed successfully.")
 
-        # Extraction for All Images
-        st.header("Watermark Extraction")
-        plt.figure(figsize=(20, len(results) * 3))
-        for i, result in enumerate(results):
-            Y_watermarked_loaded_float = np.load(f"watermarked_image_float_{result['idx']}.npy")
-            decrypted_watermark = perform_watermark_extraction(
-                Y_watermarked_loaded_float,
-                result['alpha_final'],
-                result['Uw'],
-                result['Vwh'],
-                result['S'],
-                watermark_text_size,
-                result['ll_shape']
-            )
-    
-            is_authentic, extracted_hash = verify_authenticity(result['host_image'], decrypted_watermark)
-            st.write(f"🔒 Authenticity Verification for Image {result['idx']}:")
-            st.write(f"  Is Authentic: {is_authentic}")
-            st.write(f"  Extracted Hash (first 16 chars): {extracted_hash}")
-    
-            ber = calculate_ber(result['original_watermark'], decrypted_watermark)
-            ncc = calculate_ncc(result['original_watermark'], decrypted_watermark)
-            st.write(f"🔍 Quality of Extracted Watermark (No Attack) for Image {result['idx']}:")
-            st.write(f"  BER: {ber:.6f}")
-            st.write(f"  NCC: {ncc:.6f}")
-    
-            plt.subplot(len(results), 4, i * 4 + 1)
-            plt.imshow(result['host_image'], cmap='gray')
-            plt.title(f"Image {result['idx']}\nPreprocessed Host")
-            plt.axis('off')
-    
-            plt.subplot(len(results), 4, i * 4 + 2)
-            plt.imshow(result['encrypted_watermark'], cmap='gray')
-            plt.title(f"Image {result['idx']}\nEncrypted Watermark")
-            plt.axis('off')
-    
-            plt.subplot(len(results), 4, i * 4 + 3)
-            plt.imshow(result['watermarked_image'], cmap='gray')
-            plt.title(f"Image {result['idx']}\nWatermarked\nPSNR={result['psnr']:.2f}, SSIM={result['ssim']:.3f}")
-            plt.axis('off')
-    
-            plt.subplot(len(results), 4, i * 4 + 4)
-            plt.imshow(decrypted_watermark, cmap='gray')
-            plt.title(f"Image {result['idx']}\nDecrypted (No Attack)\nBER={ber:.3f}, NCC={ncc:.3f}")
-            plt.axis('off')
-    
-        plt.tight_layout()
-        plt.suptitle("Watermark Embedding and Extraction Results", fontsize=16)
-        plt.subplots_adjust(top=0.9)
-        st.pyplot(plt)
-        plt.close()
+# Extraction Action
+if extract_button and st.session_state.embedding_done and st.session_state.results:
+    st.header("Watermark Extraction")
+    plt.figure(figsize=(20, len(st.session_state.results) * 3))
+    for i, result in enumerate(st.session_state.results):
+        Y_watermarked_loaded_float = np.load(f"watermarked_image_float_{result['idx']}.npy")
+        decrypted_watermark = perform_watermark_extraction(
+            Y_watermarked_loaded_float,
+            result['alpha_final'],
+            result['Uw'],
+            result['Vwh'],
+            result['S'],
+            watermark_text_size,
+            result['ll_shape']
+        )
 
-        # Robustness Analysis for First Image
-        if results:
-            st.header("Robustness Analysis for Image 1")
-            first_result = results[0]
-            attack_types_params = [
-                ("no_attack", {}),
-                ("salt_pepper", {"amount": 0.01}),
-                ("gaussian_noise", {"mean": 0, "std": 15}),
-                ("jpeg_compression", {"quality": 90}),
-                ("rotation", {"angle": 15}),
-                ("scaling", {"scale": 0.7}),
-                ("cropping", {"percent": 0.1})
-            ]
-            num_attacks = len(attack_types_params)
-            num_plot_columns = 4
-            num_plot_rows = (num_attacks + num_plot_columns - 1) // num_plot_columns * 2
-            fig_attacks, axs_attacks = plt.subplots(
-                num_plot_rows, num_plot_columns,
-                figsize=(4 * num_plot_columns, 3 * num_plot_rows / 2)
-            )
-            axs_attacks_flat = axs_attacks.flatten() if num_plot_rows > 1 or num_plot_columns > 1 else [axs_attacks]
-            plot_idx = 0
+        is_authentic, extracted_hash = verify_authenticity(result['host_image'], decrypted_watermark)
+        st.write(f"🔒 Authenticity Verification for Image {result['idx']}:")
+        st.write(f"  Is Authentic: {is_authentic}")
+        st.write(f"  Extracted Hash (first 16 chars): {extracted_hash}")
 
-            for attack_idx, (attack_name, params) in enumerate(attack_types_params):
-                st.write(f"Applying Attack: {attack_name} with params: {params}")
-                attacked_image_float = apply_attack(first_result['watermarked_float'].copy(), attack_name, **params)
-                cv2.imwrite(f"log_attacked_image_{attack_name}.png", np.clip(attacked_image_float, 0, 255).astype(np.uint8))
-                decrypted_watermark_attacked = perform_watermark_extraction(
-                    attacked_image_float,
-                    first_result['alpha_final'],
-                    first_result['Uw'],
-                    first_result['Vwh'],
-                    first_result['S'],
-                    watermark_text_size,
-                    first_result['ll_shape']
-                )
-                cv2.imwrite(f"log_decrypted_watermark_after_{attack_name}.png", decrypted_watermark_attacked)
-                ber_attacked = calculate_ber(first_result['original_watermark'], decrypted_watermark_attacked)
-                ncc_attacked = calculate_ncc(first_result['original_watermark'], decrypted_watermark_attacked)
-                st.write(f"  Results for {attack_name}: BER = {ber_attacked:.6f}, NCC = {ncc_attacked:.6f}")
-                if plot_idx < len(axs_attacks_flat):
-                    ax_image = axs_attacks_flat[plot_idx]
-                    ax_image.imshow(np.clip(attacked_image_float, 0, 255).astype(np.uint8), cmap='gray')
-                    ax_image.set_title(f"Attacked: {attack_name}", fontsize=9)
-                    ax_image.axis('off')
-                plot_idx += 1
-                if plot_idx < len(axs_attacks_flat):
-                    ax_watermark = axs_attacks_flat[plot_idx]
-                    ax_watermark.imshow(decrypted_watermark_attacked, cmap='gray')
-                    ax_watermark.set_title(f"Extracted WM\nBER={ber_attacked:.3f}, NCC={ncc_attacked:.3f}", fontsize=9)
-                    ax_watermark.axis('off')
-                plot_idx += 1
-            while plot_idx < len(axs_attacks_flat):
-                axs_attacks_flat[plot_idx].axis('off')
-                plot_idx += 1
-            plt.tight_layout(rect=[0, 0, 1, 0.96])
-            fig_attacks.suptitle("Robustness Analysis with Authentication (SHA-512) for Image 1", fontsize=16)
-            st.pyplot(fig_attacks)
-            plt.close()
+        ber = calculate_ber(result['original_watermark'], decrypted_watermark)
+        ncc = calculate_ncc(result['original_watermark'], decrypted_watermark)
+        st.write(f"🔍 Quality of Extracted Watermark (No Attack) for Image {result['idx']}:")
+        st.write(f"  BER: {ber:.6f}")
+        st.write(f"  NCC: {ncc:.6f}")
+
+        plt.subplot(len(st.session_state.results), 4, i * 4 + 1)
+        plt.imshow(result['host_image'], cmap='gray')
+        plt.title(f"Image {result['idx']}\nPreprocessed Host")
+        plt.axis('off')
+
+        plt.subplot(len(st.session_state.results), 4, i * 4 + 2)
+        plt.imshow(result['encrypted_watermark'], cmap='gray')
+        plt.title(f"Image {result['idx']}\nEncrypted Watermark")
+        plt.axis('off')
+
+        plt.subplot(len(st.session_state.results), 4, i * 4 + 3)
+        plt.imshow(result['watermarked_image'], cmap='gray')
+        plt.title(f"Image {result['idx']}\nWatermarked\nPSNR={result['psnr']:.2f}, SSIM={result['ssim']:.3f}")
+        plt.axis('off')
+
+        plt.subplot(len(st.session_state.results), 4, i * 4 + 4)
+        plt.imshow(decrypted_watermark, cmap='gray')
+        plt.title(f"Image {result['idx']}\nDecrypted (No Attack)\nBER={ber:.3f}, NCC={ncc:.3f}")
+        plt.axis('off')
+
+    plt.tight_layout()
+    plt.suptitle("Watermark Embedding and Extraction Results", fontsize=16)
+    plt.subplots_adjust(top=0.9)
+    st.pyplot(plt)
+    plt.close()
+    st.session_state.extraction_done = True
+    st.success("Watermark extraction completed successfully.")
+
+# Robustness Analysis Action
+if robustness_button and st.session_state.embedding_done and st.session_state.results:
+    st.header("Robustness Analysis for Image 1")
+    first_result = st.session_state.results[0]
+    attack_types_params = [
+        ("no_attack", {}),
+        ("salt_pepper", {"amount": 0.01}),
+        ("gaussian_noise", {"mean": 0, "std": 15}),
+        ("jpeg_compression", {"quality": 90}),
+        ("rotation", {"angle": 15}),
+        ("scaling", {"scale": 0.7}),
+        ("cropping", {"percent": 0.1})
+    ]
+    num_attacks = len(attack_types_params)
+    num_plot_columns = 4
+    num_plot_rows = (num_attacks + num_plot_columns - 1) // num_plot_columns * 2
+    fig_attacks, axs_attacks = plt.subplots(
+        num_plot_rows, num_plot_columns,
+        figsize=(4 * num_plot_columns, 3 * num_plot_rows / 2)
+    )
+    axs_attacks_flat = axs_attacks.flatten() if num_plot_rows > 1 or num_plot_columns > 1 else [axs_attacks]
+    plot_idx = 0
+
+    for attack_idx, (attack_name, params) in enumerate(attack_types_params):
+        st.write(f"Applying Attack: {attack_name} with params: {params}")
+        attacked_image_float = apply_attack(first_result['watermarked_float'].copy(), attack_name, **params)
+        cv2.imwrite(f"log_attacked_image_{attack_name}.png", np.clip(attacked_image_float, 0, 255).astype(np.uint8))
+        decrypted_watermark_attacked = perform_watermark_extraction(
+            attacked_image_float,
+            first_result['alpha_final'],
+            first_result['Uw'],
+            first_result['Vwh'],
+            first_result['S'],
+            watermark_text_size,
+            first_result['ll_shape']
+        )
+        cv2.imwrite(f"log_decrypted_watermark_after_{attack_name}.png", decrypted_watermark_attacked)
+        ber_attacked = calculate_ber(first_result['original_watermark'], decrypted_watermark_attacked)
+        ncc_attacked = calculate_ncc(first_result['original_watermark'], decrypted_watermark_attacked)
+        st.write(f"  Results for {attack_name}: BER = {ber_attacked:.6f}, NCC = {ncc_attacked:.6f}")
+        if plot_idx < len(axs_attacks_flat):
+            ax_image = axs_attacks_flat[plot_idx]
+            ax_image.imshow(np.clip(attacked_image_float, 0, 255).astype(np.uint8), cmap='gray')
+            ax_image.set_title(f"Attacked: {attack_name}", fontsize=9)
+            ax_image.axis('off')
+        plot_idx += 1
+        if plot_idx < len(axs_attacks_flat):
+            ax_watermark = axs_attacks_flat[plot_idx]
+            ax_watermark.imshow(decrypted_watermark_attacked, cmap='gray')
+            ax_watermark.set_title(f"Extracted WM\nBER={ber_attacked:.3f}, NCC={ncc_attacked:.3f}", fontsize=9)
+            ax_watermark.axis('off')
+        plot_idx += 1
+    while plot_idx < len(axs_attacks_flat):
+        axs_attacks_flat[plot_idx].axis('off')
+        plot_idx += 1
+    plt.tight_layout(rect=[0, 6, 1, 0.96])
+    fig_attacks.suptitle("Robustness Analysis with Authentication (SHA-512) for Image 1", fontsize=16)
+    st.pyplot(fig_attacks)
+    plt.close()
+    st.session_state.robustness_done = True
+    st.success("Robustness analysis completed successfully.")
 
 # Clean up temporary files
-for idx in range(len(uploaded_files)):
+for idx in range(len(st.session_state.uploaded_files)):
     tmp_file_path = f"watermarked_image_float_{idx+1}.npy"
     if os.path.exists(tmp_file_path):
         os.remove(tmp_file_path)
