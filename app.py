@@ -289,7 +289,7 @@ def perform_watermark_embedding(original_image_processed: np.ndarray,
 
     LL_watermarked = crop_to_original(Aw, LL.shape)
     Y_watermarked_float = pywt.idwt2((LL_watermarked, (LH, HL, HH)), 'haar')
-    st.write("Watermarked image reconstructed with inverse IWT.")
+    st.write("Watermarked image reconstructed with inverse DWT.")
 
     np.save("watermarked_image_float.npy", Y_watermarked_float)
     cv2.imwrite("log_watermarked_image_visual.png", np.clip(Y_watermarked_float, 0, 255).astype(np.uint8))
