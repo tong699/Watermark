@@ -1,4 +1,4 @@
-# Digital Medical Image Watermarking (IWT + SVD + Logistic Encryption)
+# Digital Medical Image Watermarking (DWT + SVD + Logistic Encryption)
 
 ## Overview
 
