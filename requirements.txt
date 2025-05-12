@@ -2,7 +2,6 @@ streamlit
 opencv-python-headless
 numpy
 PyWavelets
-qrcode
 Pillow
 cryptography
 pydicom
