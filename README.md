@@ -13,7 +13,15 @@ Streamlit application for embedding and extracting encrypted text watermarks in 
 
 ## Installation
 
-* Install Python 3.7 or later
+* Create Virtual environment:
+  
+  ```bash
+   python -m venv env
+  ```
+* Activate:
+  ```bash
+   env/Scripts/Activate
+  ```
 * Install dependencies:
 
   ```bash
