@@ -20,7 +20,7 @@ Streamlit application for embedding and extracting encrypted text watermarks in 
   ```
 * Activate:
   ```bash
-   env/Scripts/Activate
+   env\Scripts\Activate
   ```
 * Install dependencies:
 
