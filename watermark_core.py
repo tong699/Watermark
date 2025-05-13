@@ -124,7 +124,6 @@ def compute_adaptive_alpha(image: np.ndarray, lambda_strength: float = 0.05) -> 
     alpha = lambda_strength / (1 + np.exp(-(E_e / E_v)))
     return alpha
 
-# --- Liu and Tan SVD Functions ---
 def make_square_matrix(img: np.ndarray, fixed_size: int = 256) -> np.ndarray:
     h, w = img.shape
     result = np.zeros((fixed_size, fixed_size), dtype=img.dtype)
