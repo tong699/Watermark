@@ -46,8 +46,7 @@ def extract_dicom_metadata_text(ds: pydicom.dataset.FileDataset) -> str:
         text = "UNKNOWN\nDICOM\nMETADATA"
     return text
 
-def generate_text_watermark(text: str, image_hash: str, size: tuple = (128, 128), font_size: int = 10) -> np.ndarray:
-    full_text = f"{text}\nHASH:{image_hash[:16]}"
+def generate_text_watermark(text: str, size: tuple = (128, 128), font_size: int = 10) -> np.ndarray:
     img = Image.new('L', size, color=255)
     draw = ImageDraw.Draw(img)
     try:
@@ -58,7 +57,7 @@ def generate_text_watermark(text: str, image_hash: str, size: tuple = (128, 128)
     max_width_px = size[0] - 4
     wrapped_lines = []
     estimated_char_wrap_width = 20
-    for line in full_text.split("\n"):
+    for line in text.split("\n"):
         if draw.textlength(line, font=font) <= max_width_px:
             wrapped_lines.append(line)
         else:
@@ -263,11 +262,9 @@ def perform_watermark_embedding(original_image_processed: np.ndarray,
                                 use_adaptive_alpha: bool = False,
                                 lambda_strength: float = 0.05) -> tuple:
     print("--- Starting Watermark Embedding ---")
-    image_hash = compute_image_hash(original_image_processed)
-    print(f"Computed image hash (SHA-512): {image_hash[:16]}...")
-    original_text_watermark_img = generate_text_watermark(watermark_text, image_hash, size=(128, 128), font_size=10)
+    original_text_watermark_img = generate_text_watermark(watermark_text, size=(128, 128), font_size=10)
     cv2.imwrite("log_original_text_watermark.png", original_text_watermark_img)
-    print(f"Text watermark generated with hash. Shape: {original_text_watermark_img.shape}")
+    print(f"Text watermark generated. Shape: {original_text_watermark_img.shape}")
 
     encrypted_watermark_img = logistic_encrypt(original_text_watermark_img, x0=0.5, r=4.0)
     cv2.imwrite("log_intermediate_encrypted_text_watermark.png", encrypted_watermark_img)
@@ -300,7 +297,7 @@ def perform_watermark_embedding(original_image_processed: np.ndarray,
     cv2.imwrite("log_watermarked_image_visual.png", np.clip(Y_watermarked_float, 0, 255).astype(np.uint8))
     print("--- Watermark Embedding Finished ---")
     return (Y_watermarked_float, alpha_used, Uw, Vwh, S, encrypted_watermark_img, original_shape, original_text_watermark_img)
-
+                                    
 def perform_watermark_extraction(Y_watermarked_attacked_float: np.ndarray,
                                  alpha_used: float,
                                  Uw: np.ndarray,
