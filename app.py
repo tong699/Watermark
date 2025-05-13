@@ -10,7 +10,7 @@ import zipfile
 
 from watermark_core import (
     preprocess_medical_image,
-    extract_dicom_metadata_text,  
+    extract_dicom_metadata_text,
     generate_text_watermark,
     logistic_encrypt,
     logistic_decrypt,
@@ -18,7 +18,8 @@ from watermark_core import (
     perform_watermark_extraction,
     evaluate_watermark_quality,
     calculate_ber,
-    calculate_ncc
+    calculate_ncc,
+    apply_attack
 )
 
 st.set_page_config(page_title="Digital Medical Image Watermarking", layout="wide")
@@ -79,6 +80,42 @@ elif mode == "Extract Watermark":
     uploaded_wm_img = st.file_uploader("Upload Watermarked Image", type=["png", "jpg"])
     uploaded_npz = st.file_uploader("Upload Metadata (.npz)", type=["npz"])
 
+    # Robustness Analysis Section
+    st.subheader("Robustness Analysis")
+    apply_attacks = st.checkbox("Apply Attack Before Extraction", value=False)
+    attack_type = "no_attack"
+    attack_params = {}
+    
+    if apply_attacks:
+        attack_type = st.selectbox(
+            "Select Attack Type",
+            [
+                "no_attack",
+                "salt_pepper",
+                "gaussian_noise",
+                "jpeg_compression",
+                "scaling",
+                "rotation",
+                "cropping"
+            ],
+            index=0
+        )
+
+        # Attack parameter configuration
+        if attack_type == "salt_pepper":
+            attack_params["amount"] = st.slider("Noise Amount", 0.001, 0.1, 0.02, 0.001)
+        elif attack_type == "gaussian_noise":
+            attack_params["mean"] = st.slider("Noise Mean", -10.0, 10.0, 0.0, 0.1)
+            attack_params["std"] = st.slider("Noise Standard Deviation", 1.0, 50.0, 10.0, 1.0)
+        elif attack_type == "jpeg_compression":
+            attack_params["quality"] = st.slider("JPEG Quality", 10, 100, 50, 5)
+        elif attack_type == "scaling":
+            attack_params["scale"] = st.slider("Scale Factor", 0.1, 2.0, 0.5, 0.1)
+        elif attack_type == "rotation":
+            attack_params["angle"] = st.slider("Rotation Angle (degrees)", -90, 90, 30, 5)
+        elif attack_type == "cropping":
+            attack_params["percent"] = st.slider("Crop Percentage", 0.1, 0.9, 0.3, 0.05)
+
     if uploaded_wm_img and uploaded_npz:
         file_bytes = np.asarray(bytearray(uploaded_wm_img.read()), dtype=np.uint8)
         wm_image = cv2.imdecode(file_bytes, cv2.IMREAD_GRAYSCALE).astype(np.float64)
@@ -91,8 +128,13 @@ elif mode == "Extract Watermark":
         shape = tuple(npz_data["shape"])
         original_wm = npz_data["wm"]
 
+        # Apply selected attack
+        attacked_image = apply_attack(wm_image, attack_type, **attack_params)
+        attacked_display = np.clip(attacked_image, 0, 255).astype(np.uint8)
+
+        # Perform watermark extraction on attacked image
         extracted_wm = perform_watermark_extraction(
-            wm_image,
+            attacked_image,
             alpha,
             Uw,
             Vwh,
@@ -101,7 +143,16 @@ elif mode == "Extract Watermark":
             shape
         )
 
-        st.image(extracted_wm.astype(np.uint8), caption="Extracted Watermark", width=512, use_container_width=True)
+        # Display results
+        col1, col2 = st.columns(2)
+        with col1:
+            st.image(attacked_display, caption="Attacked Watermarked Image", width=512, use_container_width=True)
+        with col2:
+            st.image(extracted_wm.astype(np.uint8), caption="Extracted Watermark", width=512, use_container_width=True)
+
+        # Calculate and display metrics
         ber = calculate_ber(original_wm, extracted_wm)
         ncc = calculate_ncc(original_wm, extracted_wm)
+        st.text(f"Attack Type: {attack_type}")
+        st.text(f"Parameters: {attack_params}")
         st.text(f"BER: {ber:.6f} | NCC: {ncc:.6f}")
