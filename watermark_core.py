@@ -7,7 +7,6 @@ import cv2
 import matplotlib.pyplot as plt
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 import pywt
-import hashlib
 import os
 
 # --- Image Preprocessing ---
