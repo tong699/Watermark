@@ -22,7 +22,7 @@ from watermark_core import (
 )
 
 st.set_page_config(page_title="Digital Medical Image Watermarking", layout="wide")
-st.title("Digital Medical Image Watermarking (DWT + SVD + Logistic Encryption)")
+st.title("Digital Medical Image Watermarking (DWT + SVD)")
 
 mode = st.radio("Select Mode", ["Embed Watermark", "Extract Watermark"])
 
